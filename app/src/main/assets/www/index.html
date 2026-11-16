@@ -370,6 +370,19 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 
 .net { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--warn); color: var(--warn-ink); font-weight: 600; font-size: 14px; }
 .net[hidden] { display: none; }
+/* operations */
+.oe-list { display: flex; flex-direction: column; gap: 8px; }
+.oe-row { display: grid; grid-template-columns: 26px 1fr 96px; gap: 8px; align-items: center; }
+.oe-n { font-weight: 700; color: var(--muted); text-align: center; }
+.oe-name { font-weight: 600; font-size: 14px; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
+.oe-name small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
+.oe-row .inp { min-height: 44px; text-align: right; font-size: 18px; font-weight: 600; }
+.oe-sum { font-weight: 600; }
+.sheet .actions.sticky { position: sticky; bottom: 0; background: var(--card); padding-top: 8px; }
+.od-card { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.od-card .wide { grid-column: 1 / -1; }
+.od-card .od-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--muted); }
+.loss .txt.slow { color: var(--muted); font-weight: 500; }
 .upd-pop { z-index: 60; }
 .upd-bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--ink); color: var(--card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
 .upd-bar[hidden] { display: none; }
@@ -534,6 +547,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       <input class="inp" type="number" id="sam" inputmode="decimal" min="0.01" max="999" step="0.01">
       <span class="hint" id="sam-hint">Used to work out efficiency</span>
     </div>
+    <div class="field wide">
+      <button type="button" class="btn" id="ops-btn">Operations</button>
+    </div>
   </section>
 
   <p class="meta" id="meta" hidden></p>
@@ -637,6 +653,40 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   </div>
 </div>
 
+<div class="overlay" id="oe" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="oe-title">
+    <div class="stripe" aria-hidden="true"></div>
+    <div class="sheet-body">
+      <h2 id="oe-title">Output by operation</h2>
+      <p class="hint" id="oe-sub">Enter the pieces finished at every operation this hour.</p>
+      <div class="oe-list" id="oe-list"></div>
+      <p class="oe-sum" id="oe-sum"></p>
+      <div class="err" id="oe-err" role="alert"></div>
+      <div class="actions sticky">
+        <button type="button" class="btn" id="oe-cancel">Cancel</button>
+        <button type="button" class="btn primary" id="oe-save">Save hour</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="od" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="od-title">
+    <div class="stripe" aria-hidden="true"></div>
+    <div class="sheet-body">
+      <h2 id="od-title">Operations</h2>
+      <p class="oe-sum" id="od-total"></p>
+      <div class="oe-list" id="od-list"></div>
+      <button type="button" class="btn" id="od-add">Add operation</button>
+      <div class="err" id="od-err" role="alert"></div>
+      <div class="actions sticky">
+        <button type="button" class="btn" id="od-cancel">Close</button>
+        <button type="button" class="btn primary" id="od-save">Save operations</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="modal" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="m-title">
     <div class="stripe" aria-hidden="true"></div>
@@ -678,8 +728,16 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     ['7', '4–5', '4'], ['8', '5–6', '5'], ['9', 'Late hours', 'Late']
   ];
   var END_HOUR = { '1': 10, '2': 11, '3': 12, '4': 13, '5': 15, '6': 16, '7': 17, '8': 18, '9': 19 };
+  var DEFAULT_OPERATIONS = [
+    ['FACING MARKING X2', 'MANUAL', 0.24], ['COIN PKT HEM FOLDER WITH CUT X1', 'MH380', 0.05], ['COIN PKT PRESS X1', 'PRESS', 0.23],
+    ['COIN PKT ATTACH AT FACING X1', 'DNLS', 0.27], ['FACING O/LOCK X2', '3TH O/L', 0.15], ['FACING ATTACH AT LINING X2', 'FLAT LOCK', 0.38],
+    ['JETTING O/LOCK X2', '3TH O/L', 0.14], ['JETTING ATTACH AT LINNING X2', 'FLAT LOCK', 0.4], ['LINING CLOSE O/LOCK X2', '3TH O/L', 0.31],
+    ['LINING TURNING X2', 'MANUAL', 0.2], ['LINING TOP X2', 'SNLS', 0.3]
+  ].map(function (o, i) { return { id: 'o' + (i + 1), name: o[0], machine: o[1], sam: o[2] }; });
+  var operations = DEFAULT_OPERATIONS.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam }; });
+  var sumSam = function (list) { return Math.round(list.reduce(function (t, o) { return t + o.sam; }, 0) * 100) / 100; };
   var DEFAULT_SAM = 2.67;
-  var STD_MINUTES = DEFAULT_SAM;
+  var STD_MINUTES = sumSam(operations);
   var RATE_PER_OPERATOR_HOUR = 225;
   var DEFAULTS = { section: 'Small Parts GF', strength: 30, ops: 27, bottleneck: 70 };
   var CAUSES = ['Material shortage', 'Machine breakdown', 'Power cut', 'Absent operators', 'Rework', 'Changeover'];
@@ -695,6 +753,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   var slug = function (s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'section'; };
   var round1 = function (v) { return Math.round(v * 10) / 10; };
   var fmt1 = function (v) { return round1(v).toFixed(1); };
+  var fmt2 = function (v) { return (Math.round(v * 100) / 100).toFixed(2); };
   var fInt = function (v) { return Math.round(v).toLocaleString('en-US'); };
   var ordinal = function (n) {
     var v = n % 100;
@@ -799,6 +858,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       if (!v || typeof v.out !== 'number') return;
       hours[k] = { out: v.out };
       if (typeof v.loss === 'number') { hours[k].loss = v.loss; hours[k].cause = String(v.cause || ''); }
+      if (v.ops && typeof v.ops === 'object') {
+        hours[k].ops = {};
+        Object.keys(v.ops).forEach(function (id) { var n = Number(v.ops[id]); if (n >= 0 && n <= 1000000) hours[k].ops[id] = Math.round(n); });
+      }
     });
     return {
       date: d.date || base.date,
@@ -826,9 +889,20 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       })
       .then(function () { setStatus('Saved ' + clock()); }, function () { setStatus('Not saved: you may not have permission to edit', true); });
   };
+  var applyOperations = function (st) {
+    if (!st) return;
+    if (Array.isArray(st.operations)) {
+      var list = [];
+      st.operations.forEach(function (o, i) {
+        if (o && String(o.name || '').trim() && Number(o.sam) > 0) list.push({ id: String(o.id || 'o' + (i + 1)).slice(0, 24), name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(Number(o.sam) * 100) / 100 });
+      });
+      operations = list;
+    }
+    if (operations.length) STD_MINUTES = sumSam(operations);
+  };
   var persistSettings = function () {
     if (!db || role !== 'admin') return;
-    var value = { bottleneck: bottleneck, sam: STD_MINUTES };
+    var value = { bottleneck: bottleneck, sam: STD_MINUTES, operations: operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam }; }) };
     chain = chain
       .then(function () { return db.doc('settings/main').set(value); })
       .then(function () { setStatus('Saved ' + clock()); }, function () { setStatus('Not saved: you may not have permission to edit', true); });
@@ -873,6 +947,138 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     if (isLow(eff(n))) { pending = { key: key, prev: prev ? { out: prev.out, loss: prev.loss, cause: prev.cause } : null }; askLoss(key, true); }
   };
 
+  /* ---------- operations: output entered per operation, the lowest one is the line output ---------- */
+  var slowest = function (rec) {
+    if (!rec || !rec.ops) return null;
+    var best = null;
+    operations.forEach(function (o) {
+      var n = rec.ops[o.id];
+      if (typeof n === 'number' && (!best || n < best.n)) best = { op: o, n: n };
+    });
+    return best;
+  };
+  var slowText = function (rec) { var b = slowest(rec); return b ? 'Slowest: ' + b.op.name + ' (' + fInt(b.n) + ')' : ''; };
+
+  var oeKey = null, oeEditable = false, oeInputs = [];
+  var oeRead = function () {
+    var vals = oeInputs.map(function (i) { return i.value.trim() === '' ? null : Math.round(Number(i.value)); });
+    var ok = vals.every(function (v) { return v !== null && v >= 0 && v <= 1000000; });
+    return { vals: vals, ok: ok };
+  };
+  var oeUpdate = function () {
+    var r = oeRead();
+    if (!r.ok) {
+      var left = r.vals.filter(function (v) { return v === null; }).length;
+      $('oe-sum').textContent = oeEditable ? (left ? left + ' operation' + (left > 1 ? 's' : '') + ' still empty' : 'Check the numbers') : '';
+      return;
+    }
+    var min = Math.min.apply(null, r.vals);
+    var at = operations[r.vals.indexOf(min)];
+    $('oe-sum').textContent = 'Line output ' + fInt(min) + ' (lowest: ' + at.name + ')';
+  };
+  var openOpsEntry = function (key) {
+    var rec = state.hours[key];
+    var editable = isOpen(key) && !counterHolds(key);
+    if (!editable && !rec) return;
+    oeKey = key; oeEditable = editable; oeInputs = [];
+    lastFocus = document.activeElement;
+    $('oe-title').textContent = slotLabel(key);
+    $('oe-sub').textContent = editable ? 'Enter the pieces finished at every operation this hour.' : 'Recorded. Only the admin can change it.';
+    $('oe-save').hidden = !editable;
+    $('oe-cancel').textContent = editable ? 'Cancel' : 'Close';
+    $('oe-err').textContent = '';
+    var list = $('oe-list');
+    list.replaceChildren();
+    operations.forEach(function (o, i) {
+      var inp = h('input', { class: 'inp', type: 'number', inputmode: 'numeric', min: '0', step: '1', placeholder: '0', 'aria-label': o.name });
+      if (rec && rec.ops && typeof rec.ops[o.id] === 'number') inp.value = String(rec.ops[o.id]);
+      inp.disabled = !editable;
+      inp.addEventListener('input', oeUpdate);
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter') return;
+        ev.preventDefault();
+        if (oeInputs[i + 1]) oeInputs[i + 1].focus(); else $('oe-save').focus();
+      });
+      oeInputs.push(inp);
+      list.append(h('label', { class: 'oe-row' }, h('span', { class: 'oe-n', text: String(i + 1) }), h('span', { class: 'oe-name' }, o.name, h('small', { text: (o.machine ? o.machine + ' · ' : '') + 'SAM ' + fmt2(o.sam) })), inp));
+    });
+    oeUpdate();
+    $('oe').hidden = false;
+    if (editable && oeInputs[0]) oeInputs[0].focus();
+  };
+  var closeOps = function () {
+    $('oe').hidden = true;
+    oeKey = null;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  };
+  var saveOps = function () {
+    var key = oeKey;
+    if (!key || !oeEditable) return;
+    var r = oeRead();
+    if (!r.ok) { $('oe-err').textContent = 'Fill in every operation with a whole number (0 or more).'; return; }
+    if (!isOpen(key) || counterHolds(key)) { closeOps(); render(); return; }
+    var prev = state.hours[key];
+    var map = {};
+    operations.forEach(function (o, i) { map[o.id] = r.vals[i]; });
+    var out = Math.min.apply(null, r.vals);
+    var rec = { out: out, ops: map };
+    var low = isLow(eff(out));
+    if (prev && prev.loss != null && low && prev.out === out) { rec.loss = prev.loss; rec.cause = prev.cause || ''; }
+    var snapshot = prev ? { out: prev.out, loss: prev.loss, cause: prev.cause, ops: prev.ops } : null;
+    state.hours[key] = rec;
+    persist();
+    closeOps();
+    render();
+    if (low && rec.loss == null) { pending = { key: key, prev: snapshot }; askLoss(key, true); }
+  };
+
+  var odDraft = [];
+  var odRender = function () {
+    var list = $('od-list');
+    list.replaceChildren();
+    var admin = role === 'admin';
+    odDraft.forEach(function (o, i) {
+      var name = h('input', { class: 'inp', type: 'text', value: o.name, placeholder: 'Operation', 'aria-label': 'Operation ' + (i + 1) });
+      var mach = h('input', { class: 'inp', type: 'text', value: o.machine, placeholder: 'Machine', 'aria-label': 'Machine ' + (i + 1) });
+      var sam = h('input', { class: 'inp', type: 'number', inputmode: 'decimal', min: '0.01', step: '0.01', value: String(o.sam), placeholder: 'SAM', 'aria-label': 'SAM ' + (i + 1) });
+      [name, mach, sam].forEach(function (el) { el.disabled = !admin; });
+      name.addEventListener('input', function () { o.name = name.value; });
+      mach.addEventListener('input', function () { o.machine = mach.value; });
+      sam.addEventListener('input', function () { o.sam = Number(sam.value) || 0; odTotal(); });
+      var head = h('div', { class: 'od-head' }, h('span', { text: 'Operation ' + (i + 1) }));
+      if (admin) head.append(h('button', { type: 'button', class: 'btn small', text: 'Remove', onclick: function () { odDraft.splice(i, 1); odRender(); } }));
+      list.append(h('div', { class: 'od-card' }, head, h('div', { class: 'field wide' }, name), h('div', { class: 'field' }, mach), h('div', { class: 'field' }, sam)));
+    });
+    $('od-add').hidden = !admin;
+    $('od-save').hidden = !admin;
+    odTotal();
+  };
+  var odTotal = function () { $('od-total').textContent = 'Total SAM ' + fmt2(odDraft.reduce(function (t, o) { return t + (o.sam > 0 ? o.sam : 0); }, 0)) + ' · ' + odDraft.length + ' operations'; };
+  var openOpsEditor = function () {
+    odDraft = operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam }; });
+    lastFocus = document.activeElement;
+    $('od-err').textContent = '';
+    $('od-cancel').textContent = role === 'admin' ? 'Cancel' : 'Close';
+    odRender();
+    $('od').hidden = false;
+  };
+  var closeOpsEditor = function () { $('od').hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); };
+  var saveOpsEditor = function () {
+    if (role !== 'admin') return;
+    var list = [];
+    for (var i = 0; i < odDraft.length; i += 1) {
+      var o = odDraft[i];
+      if (!String(o.name).trim()) { $('od-err').textContent = 'Operation ' + (i + 1) + ' needs a name.'; return; }
+      if (!(o.sam > 0 && o.sam <= 99)) { $('od-err').textContent = 'Operation ' + (i + 1) + ' needs a SAM above 0.'; return; }
+      list.push({ id: o.id || 'o' + Date.now().toString(36) + i, name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(o.sam * 100) / 100 });
+    }
+    operations = list;
+    if (operations.length) STD_MINUTES = sumSam(operations);
+    persistSettings();
+    closeOpsEditor();
+    render();
+  };
+
   /* ---------- popup ---------- */
   var slotLabel = function (key) { return SLOTS.filter(function (s) { return s[0] === key; })[0][1]; };
   var updatePieces = function () {
@@ -891,7 +1097,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var e = eff(rec.out);
     modalKey = key;
     lastFocus = document.activeElement;
-    $('m-text').textContent = slotLabel(key) + ' reached ' + fmt1(e) + '%, under your ' + bottleneck + '% target.';
+    $('m-text').textContent = slotLabel(key) + ' reached ' + fmt1(e) + '%, under your ' + bottleneck + '% target.' + (slowText(rec) ? ' ' + slowText(rec) + '.' : '');
     $('m-loss').value = rec.loss != null ? rec.loss : fmt1(Math.max(0, bottleneck - e));
     $('m-cause').value = rec.cause || '';
     $('m-err').textContent = '';
@@ -911,6 +1117,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       if (pending.prev) {
         var p0 = pending.prev;
         state.hours[modalKey] = { out: p0.out };
+        if (p0.ops) state.hours[modalKey].ops = p0.ops;
         if (typeof p0.loss === 'number') { state.hours[modalKey].loss = p0.loss; state.hours[modalKey].cause = p0.cause || ''; }
       } else delete state.hours[modalKey];
       pending = null;
@@ -939,10 +1146,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var pill = h('span', { class: 'pill', text: '—' });
       var loss = h('div', { class: 'loss', hidden: true });
       var row = h('div', { class: 'row' }, h('span', { class: 'hour', text: s[1] }), input, pill, loss);
-      input.addEventListener('change', function () { setOut(s[0], input.value); });
+      input.addEventListener('change', function () { if (!operations.length) setOut(s[0], input.value); });
+      input.addEventListener('click', function () { if (operations.length) openOpsEntry(s[0]); });
       input.addEventListener('keydown', function (ev) {
         if (ev.key !== 'Enter') return;
         ev.preventDefault();
+        if (operations.length) { openOpsEntry(s[0]); return; }
         input.blur();
         var next = rowRefs[SLOTS[i + 1] ? SLOTS[i + 1][0] : ''];
         if (!modalKey && next) next.input.focus();
@@ -963,10 +1172,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       seen.rows[key] = hide;
       r.row.style.display = hide ? 'none' : '';
       var rec = state.hours[key];
-      if (document.activeElement !== r.input) r.input.value = rec ? String(rec.out) : '';
+      if (operations.length || document.activeElement !== r.input) r.input.value = rec ? String(rec.out) : '';
       var open = isOpen(key);
-      r.input.disabled = !open || counterHolds(key);
-      r.input.placeholder = open ? 'Pieces' : 'Locked';
+      var opsMode = operations.length > 0;
+      r.input.readOnly = opsMode;
+      r.input.setAttribute('inputmode', opsMode ? 'none' : 'numeric');
+      r.input.disabled = opsMode ? false : (!open || counterHolds(key));
+      r.input.placeholder = open ? (opsMode ? 'Tap' : 'Pieces') : 'Locked';
       if (!rec) {
         if (!open) {
           r.row.className = 'row locked';
@@ -989,14 +1201,21 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       r.pill.className = 'pill ' + (low ? 'low' : bottleneck > 0 ? 'ok' : '');
       r.pill.textContent = e === null ? '—' : fmt1(e) + '%';
       r.loss.replaceChildren();
-      if (!low) { r.loss.hidden = true; return; }
+      var slow = slowText(rec);
+      if (!low) {
+        r.loss.hidden = !slow;
+        if (slow) r.loss.append(h('span', { class: 'txt slow', text: slow }));
+        return;
+      }
       r.loss.hidden = false;
       if (rec.loss != null) {
         var name = causeName(rec);
         r.loss.append(h('span', { class: 'txt' }, h('i', { class: 'dot', style: 'background:' + causeColor(name) }), 'Loss ' + fmt1(rec.loss) + '%' + (rec.cause ? ' \u00b7 ' + rec.cause : '')));
+        if (slow) r.loss.append(h('span', { class: 'txt slow', text: slow }));
         if (open && role === 'admin') r.loss.append(h('button', { type: 'button', class: 'btn', text: 'Edit', onclick: function () { askLoss(key); } }));
       } else {
         r.loss.append(h('span', { class: 'txt', text: open ? 'Reason needed' : 'Reason missing' }));
+        if (slow) r.loss.append(h('span', { class: 'txt slow', text: slow }));
         if (open) r.loss.append(h('button', { type: 'button', class: 'btn amber', text: 'Add reason', onclick: function () { askLoss(key); } }));
       }
     });
@@ -1255,8 +1474,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('bottleneck').disabled = role !== 'admin';
     $('bn-hint').textContent = role === 'admin' ? '0 turns the popup off' : 'Only the admin can change this';
     syncInput('sam', STD_MINUTES);
-    $('sam').disabled = role !== 'admin';
-    $('sam-hint').textContent = role === 'admin' ? 'Changing it updates every day\u2019s efficiency' : 'Only the admin can change this';
+    $('sam').disabled = role !== 'admin' || operations.length > 0;
+    $('sam-hint').textContent = operations.length ? 'Adds up from the operations list' : role === 'admin' ? 'Changing it updates every day\u2019s efficiency' : 'Only the admin can change this';
+    $('ops-btn').textContent = 'Operations (' + operations.length + ' \u00b7 SAM ' + fmt2(STD_MINUTES) + ')';
     renderTiles();
     countUp();
     renderRows();
@@ -1294,6 +1514,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     render();
   });
   $('sam').addEventListener('change', function () {
+    if (operations.length) { render(); return; }
     var v = Math.round(Number($('sam').value) * 100) / 100;
     if (v > 0 && v <= 999 && $('sam').value !== '') { STD_MINUTES = v; persistSettings(); }
     render();
@@ -1305,6 +1526,15 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   });
   $('m-save').addEventListener('click', saveLoss);
   $('m-skip').addEventListener('click', cancelModal);
+  $('oe-save').addEventListener('click', saveOps);
+  $('oe-cancel').addEventListener('click', closeOps);
+  $('oe').addEventListener('click', function (ev) { if (ev.target === $('oe')) closeOps(); });
+  $('ops-btn').addEventListener('click', openOpsEditor);
+  $('od-add').addEventListener('click', function () { odDraft.push({ id: '', name: '', machine: '', sam: 0 }); odRender(); });
+  $('od-save').addEventListener('click', saveOpsEditor);
+  $('od-cancel').addEventListener('click', closeOpsEditor);
+  $('od').addEventListener('click', function (ev) { if (ev.target === $('od')) closeOpsEditor(); });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { if (!$('oe').hidden) closeOps(); else if (!$('od').hidden) closeOpsEditor(); } });
   $('m-loss').addEventListener('input', updatePieces);
   $('m-loss').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); saveLoss(); } });
   $('m-cause').addEventListener('input', syncChips);
@@ -1643,6 +1873,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var live = res[0], st = res[1];
       if (st && Number(st.bottleneck) >= 0 && Number(st.bottleneck) <= 100) bottleneck = Math.round(Number(st.bottleneck));
       if (st && Number(st.sam) > 0 && Number(st.sam) <= 999) STD_MINUTES = Number(st.sam);
+      applyOperations(st);
       var section = live && live.date === today && live.section ? live.section : DEFAULTS.section;
       return get('days/' + today + '_' + slug(section)).then(function (day) {
         if (role !== 'spectator') return;
@@ -1870,6 +2101,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         var s = unwrap(snap);
         if (s && Number(s.bottleneck) >= 0 && Number(s.bottleneck) <= 100) bottleneck = Math.round(Number(s.bottleneck));
         if (s && Number(s.sam) > 0 && Number(s.sam) <= 999) STD_MINUTES = Number(s.sam);
+        applyOperations(s);
       }, function () {});
       return Promise.all([cw, st, loadAuth()]).then(function () {
         /* View-only accounts go straight to the live view. */
