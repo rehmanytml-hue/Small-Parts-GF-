@@ -517,6 +517,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       <input class="inp" type="number" id="bottleneck" inputmode="numeric" min="0" max="100" step="1">
       <span class="hint" id="bn-hint">0 turns the popup off</span>
     </div>
+    <div class="field">
+      <label for="sam">SAM (minutes per piece)</label>
+      <input class="inp" type="number" id="sam" inputmode="decimal" min="0.01" max="999" step="0.01">
+      <span class="hint" id="sam-hint">Used to work out efficiency</span>
+    </div>
   </section>
 
   <p class="meta" id="meta" hidden></p>
@@ -661,7 +666,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     ['7', '4–5', '4'], ['8', '5–6', '5'], ['9', 'Late hours', 'Late']
   ];
   var END_HOUR = { '1': 10, '2': 11, '3': 12, '4': 13, '5': 15, '6': 16, '7': 17, '8': 18, '9': 19 };
-  var STD_MINUTES = 2.67;
+  var DEFAULT_SAM = 2.67;
+  var STD_MINUTES = DEFAULT_SAM;
   var RATE_PER_OPERATOR_HOUR = 225;
   var DEFAULTS = { section: 'Small Parts GF', strength: 30, ops: 27, bottleneck: 70 };
   var CAUSES = ['Material shortage', 'Machine breakdown', 'Power cut', 'Absent operators', 'Rework', 'Changeover'];
@@ -806,7 +812,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   };
   var persistSettings = function () {
     if (!db || role !== 'admin') return;
-    var value = { bottleneck: bottleneck };
+    var value = { bottleneck: bottleneck, sam: STD_MINUTES };
     chain = chain
       .then(function () { return db.doc('settings/main').set(value); })
       .then(function () { setStatus('Saved ' + clock()); }, function () { setStatus('Not saved: you may not have permission to edit', true); });
@@ -1223,6 +1229,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     syncInput('bottleneck', bottleneck);
     $('bottleneck').disabled = role !== 'admin';
     $('bn-hint').textContent = role === 'admin' ? '0 turns the popup off' : 'Only the admin can change this';
+    syncInput('sam', STD_MINUTES);
+    $('sam').disabled = role !== 'admin';
+    $('sam-hint').textContent = role === 'admin' ? 'Changing it updates every day\u2019s efficiency' : 'Only the admin can change this';
     renderTiles();
     countUp();
     renderRows();
@@ -1257,6 +1266,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   $('strength').addEventListener('change', function () {
     var v = Math.round(Number($('strength').value));
     if (v >= 0 && v <= 999 && $('strength').value !== '') { state.strength = v; persist(); }
+    render();
+  });
+  $('sam').addEventListener('change', function () {
+    var v = Math.round(Number($('sam').value) * 100) / 100;
+    if (v > 0 && v <= 999 && $('sam').value !== '') { STD_MINUTES = v; persistSettings(); }
     render();
   });
   $('bottleneck').addEventListener('change', function () {
@@ -1597,6 +1611,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return Promise.all([get('live/main'), get('settings/main')]).then(function (res) {
       var live = res[0], st = res[1];
       if (st && Number(st.bottleneck) >= 0 && Number(st.bottleneck) <= 100) bottleneck = Math.round(Number(st.bottleneck));
+      if (st && Number(st.sam) > 0 && Number(st.sam) <= 999) STD_MINUTES = Number(st.sam);
       var section = live && live.date === today && live.section ? live.section : DEFAULTS.section;
       return get('days/' + today + '_' + slug(section)).then(function (day) {
         if (role !== 'spectator') return;
@@ -1812,6 +1827,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var st = withTimeout(db.doc('settings/main').get(), 10000).then(function (snap) {
         var s = unwrap(snap);
         if (s && Number(s.bottleneck) >= 0 && Number(s.bottleneck) <= 100) bottleneck = Math.round(Number(s.bottleneck));
+        if (s && Number(s.sam) > 0 && Number(s.sam) <= 999) STD_MINUTES = Number(s.sam);
       }, function () {});
       return Promise.all([cw, st, loadAuth()]).then(function () {
         /* View-only accounts go straight to the live view. */
