@@ -368,6 +368,17 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .bio-opt input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
 .linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; min-height: 40px; cursor: pointer; }
 
+.upd-bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--ink); color: var(--card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
+.upd-bar[hidden] { display: none; }
+.upd-bar span { flex: 1 1 140px; font-weight: 600; font-size: 15px; }
+.upd-bar .btn { background: transparent; color: var(--card); border-color: color-mix(in srgb, var(--card) 45%, transparent); }
+.upd-bar .btn.primary { background: var(--warn); color: var(--warn-ink); border-color: var(--warn); }
+@media (prefers-reduced-motion: no-preference) { .upd-bar { animation: a-rise 320ms ease-out; } }
+.about-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; position: relative; z-index: 1; }
+.about-row span { font-weight: 600; }
+#about-msg { margin: 6px 0 0; min-height: 1em; position: relative; z-index: 1; }
+#about-card[hidden] { display: none; }
+
 .reasons { display: flex; flex-direction: column; gap: 14px; }
 .reason { display: flex; flex-direction: column; gap: 4px; }
 .r-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -426,6 +437,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   <svg class="t-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5z"/></svg>
   <svg class="t-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
 </button>
+<div class="upd-bar" id="upd-bar" hidden role="status">
+  <span id="upd-text"></span>
+  <button type="button" class="btn small primary" id="upd-go">Update</button>
+  <button type="button" class="btn small" id="upd-later">Later</button>
+</div>
 <div class="intro" id="intro" aria-hidden="true">
   <div class="intro-in">
     <div class="i-logo">
@@ -528,6 +544,14 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     <h2 id="reasons-h">Loss by reason</h2>
     <div class="reasons" id="reasons"></div>
   </section>
+  <section class="card" id="about-card" aria-label="App version" hidden>
+    <div class="about-row">
+      <span id="about-ver">App version</span>
+      <button type="button" class="btn small" id="about-btn">Check for updates</button>
+    </div>
+    <p class="hint" id="about-msg" role="status"></p>
+  </section>
+
   <section class="card admin-only" aria-labelledby="access-h">
     <h2 id="access-h">Access</h2>
     <div class="access-acts">
@@ -1636,6 +1660,78 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       paint();
     });
     paint();
+  })();
+
+  /* ---------- app updates (Android app only) ---------- */
+  (function () {
+    var up = window.AndroidUpdate || null;
+    if (!up) return;
+    var calls = {};
+    var nextId = 0;
+    var found = null;
+    var busy = false;
+    var bar = $('upd-bar'), txt = $('upd-text'), go = $('upd-go'), later = $('upd-later');
+    var msg = $('about-msg');
+    window.__upd = function (id, json) {
+      var f = calls[id];
+      var data = {};
+      try { data = JSON.parse(json || '{}'); } catch (e) {}
+      if (f) f(data);
+    };
+    var ask = function (name, args, fn) {
+      var id = ++nextId;
+      calls[id] = fn;
+      try { up[name].apply(up, args.concat([id])); } catch (e) { delete calls[id]; fn({ state: 'error', msg: 'Updates are not available here.' }); }
+    };
+    var current = {};
+    try { current = JSON.parse(up.version() || '{}'); } catch (e) {}
+    $('about-ver').textContent = 'App version ' + (current.name || '');
+    $('about-card').hidden = false;
+
+    var show = function (text, canGo, goText) {
+      txt.textContent = text;
+      go.hidden = !canGo;
+      go.textContent = goText || 'Update';
+      later.hidden = busy;
+      bar.hidden = false;
+    };
+    var check = function (manual) {
+      if (busy) return;
+      if (manual) msg.textContent = 'Checking…';
+      ask('check', [], function (r) {
+        if (r.state === 'available') {
+          found = r;
+          msg.textContent = 'Version ' + r.code + ' is ready to install.';
+          show('A new version is available.', true, 'Update');
+        } else if (r.state === 'latest') {
+          if (manual) msg.textContent = 'You have the latest version.';
+        } else if (manual) {
+          msg.textContent = r.msg || 'Could not check for updates.';
+        }
+      });
+    };
+    go.addEventListener('click', function () {
+      if (!found || busy) return;
+      busy = true;
+      show('Downloading… 0%', false);
+      ask('install', [found.url], function (r) {
+        if (r.state === 'downloading') {
+          show('Downloading… ' + r.pct + '%', false);
+        } else if (r.state === 'ready') {
+          busy = false;
+          show('Tap Install on the screen that opened.', true, 'Try again');
+        } else if (r.state === 'permission') {
+          busy = false;
+          show('Allow installs from this app in the settings that opened, then come back and tap Update.', true, 'Update');
+        } else {
+          busy = false;
+          show(r.msg || 'The update failed.', true, 'Try again');
+        }
+      });
+    });
+    later.addEventListener('click', function () { bar.hidden = true; });
+    $('about-btn').addEventListener('click', function () { check(true); });
+    setTimeout(function () { check(false); }, 3800);
   })();
 
   /* ---------- intro ---------- */

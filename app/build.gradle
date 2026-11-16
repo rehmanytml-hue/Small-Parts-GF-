@@ -10,13 +10,27 @@ android {
         applicationId 'com.yunus.hourlyrecorder'
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        def run = System.getenv('GITHUB_RUN_NUMBER')
+        versionCode run ? run.toInteger() : 1
+        versionName '1.' + (run ?: '0')
+    }
+
+    signingConfigs {
+        shared {
+            storeFile file('shared-key.jks')
+            storePassword 'hourly-update-key'
+            keyAlias 'hourly'
+            keyPassword 'hourly-update-key'
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.shared
         }
     }
 

@@ -40,6 +40,13 @@ Phones must allow "Install unknown apps" to install an APK that is not from the 
 
 On the login form for Admin or Production counter, tick **Use fingerprint or face next time** when you log in. After that, opening that role asks for the fingerprint instead of the password, and the app asks again each time it is reopened. The password still works. The option only appears on phones that have a fingerprint or face already set up. Changing a role's password turns the fingerprint off for that role.
 
+## Updating the app from inside the app
+
+Every upload to GitHub builds a new APK and publishes it as a GitHub release. The app checks for a newer release when it opens (and the **Check for updates** button near the bottom of the screen checks on demand). Tap **Update**, wait for the download, then tap **Install** on Android's own screen. The first time, Android asks you to allow installs from this app.
+
+- The repository must be **public** for the app to read the releases.
+- The APK is signed with the key in `app/shared-key.jks`, so every update installs over the old one and keeps its data. Do not delete or replace that file. Because the key is public in this repository, someone could in theory sign a look-alike update, so only install updates you started yourself.
+
 ## Limits to know
 
 - The app needs an internet connection.
