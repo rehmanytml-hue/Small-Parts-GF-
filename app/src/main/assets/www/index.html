@@ -379,6 +379,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 #about-msg { margin: 6px 0 0; min-height: 1em; position: relative; z-index: 1; }
 #about-card[hidden] { display: none; }
 
+.role-spectator #link-card { display: none; }
+#link-card .inp { margin: 8px 0 10px; font-size: 14px; position: relative; z-index: 1; }
+.link-acts { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
+.link-acts .btn { flex: 1 1 120px; }
+#link-msg { margin: 8px 0 0; min-height: 1em; position: relative; z-index: 1; }
+.btn.small[hidden] { display: none; }
+
 .reasons { display: flex; flex-direction: column; gap: 14px; }
 .reason { display: flex; flex-direction: column; gap: 4px; }
 .r-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -544,6 +551,17 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     <h2 id="reasons-h">Loss by reason</h2>
     <div class="reasons" id="reasons"></div>
   </section>
+  <section class="card" id="link-card" aria-labelledby="link-h">
+    <h2 id="link-h">Live link</h2>
+    <p class="hint">Anyone with this link can watch today's dashboard in a web browser. No password.</p>
+    <input class="inp" type="text" id="link-url" readonly aria-label="Live link">
+    <div class="link-acts">
+      <button type="button" class="btn primary" id="link-share">Share link</button>
+      <button type="button" class="btn" id="link-copy">Copy</button>
+    </div>
+    <p class="hint" id="link-msg" role="status"></p>
+  </section>
+
   <section class="card" id="about-card" aria-label="App version" hidden>
     <div class="about-row">
       <span id="about-ver">App version</span>
@@ -627,6 +645,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   </div>
 </div>
 
+<script>window.HR_WEB_LIVE_ONLY = !window.AndroidShare;</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
@@ -1596,6 +1615,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     document.body.className = 'role-' + r;
     $('who-role').textContent = ROLE_NAME[r];
     $('logout').textContent = r === 'spectator' && canWrite === false ? 'Log in' : 'Log out';
+    $('logout').hidden = liveOnly;
     $('gate').hidden = true; $('app').hidden = false;
     stopWatch();
     if (r === 'spectator') {
@@ -1660,6 +1680,27 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       paint();
     });
     paint();
+  })();
+
+  /* ---------- shareable live link ---------- */
+  (function () {
+    var LIVE_URL = 'https://rehmanytml-hue.github.io/Small-Parts-GF-/';
+    var box = $('link-url'), msg = $('link-msg');
+    box.value = LIVE_URL;
+    box.addEventListener('focus', function () { box.select(); });
+    $('link-share').addEventListener('click', function () {
+      if (window.AndroidShare && window.AndroidShare.shareText) { window.AndroidShare.shareText('Live dashboard: ' + LIVE_URL); return; }
+      if (navigator.share) { navigator.share({ title: 'Live dashboard', url: LIVE_URL }).catch(function () {}); return; }
+      msg.textContent = 'Sharing is not available here. Use Copy.';
+    });
+    $('link-copy').addEventListener('click', function () {
+      var ok = function () { msg.textContent = 'Link copied.'; };
+      var fallback = function () {
+        try { box.focus(); box.select(); if (document.execCommand('copy')) { ok(); return; } } catch (e) {}
+        msg.textContent = 'Press and hold the link above to copy it.';
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(LIVE_URL).then(ok, fallback); else fallback();
+    });
   })();
 
   /* ---------- app updates (Android app only) ---------- */
@@ -1753,6 +1794,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   buildRows();
   render();
   setInterval(function () { if (!modalKey) { renderRows(); afterRows(); } }, 30000);
+  var liveOnly = window.HR_WEB_LIVE_ONLY === true || /[?&#]live(\b|=)/.test(location.search + location.hash);
   var init = function () {
     var grab = function (name) {
       var use = window.claude && window.claude.use ? window.claude.use(name) : Promise.resolve(null);
@@ -1760,6 +1802,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     };
     return Promise.all([grab('db'), grab('user')]).then(function (res) {
       db = res[0]; user = res[1];
+      if (liveOnly && db) { enter('spectator'); return null; }
       if (!db) {
         $('g-title').textContent = 'Cannot open';
         gateMsg('The app could not reach its database. Check the internet connection and the Firebase settings.');

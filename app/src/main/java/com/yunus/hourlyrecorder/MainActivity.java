@@ -108,6 +108,19 @@ public class MainActivity extends AppCompatActivity {
     /** Lets the page hand a picture to the phone's share sheet. */
     private class ShareBridge {
         @JavascriptInterface
+        public void shareText(final String text) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_TEXT, text);
+                    startActivity(Intent.createChooser(send, "Share live link"));
+                }
+            });
+        }
+
+        @JavascriptInterface
         public void shareImage(String base64Png, String text) {
             try {
                 byte[] data = Base64.decode(base64Png, Base64.DEFAULT);

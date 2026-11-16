@@ -30,8 +30,11 @@
         };
       }
     };
+    /* The public live link only reads, so it does not sign in. */
+    var liveOnly = window.HR_WEB_LIVE_ONLY === true || /[?&#]live(\b|=)/.test(location.search + location.hash);
     var signIn;
-    try { signIn = window.firebase.auth().signInAnonymously().catch(function () {}); } catch (e) { signIn = Promise.resolve(); }
+    if (liveOnly) signIn = Promise.resolve();
+    else try { signIn = window.firebase.auth().signInAnonymously().catch(function () {}); } catch (e) { signIn = Promise.resolve(); }
     return signIn.then(function () { return db; });
   };
   window.claude = {

@@ -1,7 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only the app (which signs in anonymously) can read and write.
+    // Anyone with the live link can read the figures. Nobody can write unless the app has signed in.
+    match /days/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /live/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Everything else, including the stored passwords, needs a signed-in app.
     match /{document=**} {
       allow read, write: if request.auth != null;
     }
