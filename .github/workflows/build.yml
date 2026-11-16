@@ -31,3 +31,12 @@ jobs:
             --title "Version ${{ github.run_number }}" \
             --notes "Commit: ${{ github.event.head_commit.message }}" \
             --latest
+      - name: Send instant push notification
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FCM_SERVICE_ACCOUNT" ]; then echo "No FCM_SERVICE_ACCOUNT secret yet, skipping the push"; exit 0; fi
+          pip install -q google-auth requests
+          python3 .github/send_push.py "${{ github.run_number }}"

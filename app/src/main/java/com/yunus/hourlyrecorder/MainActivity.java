@@ -53,6 +53,8 @@ public class MainActivity extends AppCompatActivity {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 7);
         }
         androidx.core.app.NotificationManagerCompat.from(this).cancel(4201);
+        /* With instant push set up, the hourly check is only needed as a fallback, so skip it to avoid two notifications. */
+        if (FcmSetup.init(this)) return;
         try {
             PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(UpdateWorker.class, 1, TimeUnit.HOURS)
                     .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
