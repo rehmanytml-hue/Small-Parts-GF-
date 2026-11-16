@@ -368,6 +368,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .bio-opt input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
 .linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; min-height: 40px; cursor: pointer; }
 
+.net { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--warn); color: var(--warn-ink); font-weight: 600; font-size: 14px; }
+.net[hidden] { display: none; }
 .upd-bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--ink); color: var(--card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
 .upd-bar[hidden] { display: none; }
 .upd-bar span { flex: 1 1 140px; font-weight: 600; font-size: 15px; }
@@ -484,6 +486,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     </div>
   </header>
 
+  <p class="net" id="net" role="status" hidden></p>
   <p class="note" id="note" hidden>Saving is not available on this screen. Figures you enter stay here until you reload.</p>
 
   <section class="card settings" aria-label="Day and line settings">
@@ -651,9 +654,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 </div>
 
 <script>window.HR_WEB_LIVE_ONLY = !window.AndroidShare;</script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="firebase-db.js"></script>
 <script>
@@ -1214,7 +1217,16 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var node = $(id);
     if (document.activeElement !== node) node.value = String(value);
   };
+  var netBar = function () {
+    var n = $('net');
+    var off = navigator.onLine === false;
+    n.hidden = !off;
+    if (off) n.textContent = role === 'spectator' ? 'Offline: showing the last data saved on this phone.' : 'Offline: entries are saved on this phone and will sync when the connection returns.';
+  };
+  window.addEventListener('online', netBar);
+  window.addEventListener('offline', netBar);
   var render = function () {
+    netBar();
     syncInput('date', state.date);
     syncInput('section', state.section);
     syncInput('ops', state.ops);
@@ -1501,8 +1513,14 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return hashWith('s256', salt + ':' + pw).then(function (hx) { return { salt: salt, hash: hx, alg: 's256' }; },
       function () { return { salt: salt, hash: weakHash(salt + ':' + pw), alg: 'weak' }; });
   };
+  var authUnsure = false;
   var loadAuth = function () {
-    return withTimeout(db.doc('auth/main').get(), 10000).then(function (snap) { auth = unwrap(snap) || {}; }, function () {});
+    authUnsure = false;
+    return withTimeout(db.doc('auth/main').get(), 10000).then(function (snap) {
+      auth = unwrap(snap) || {};
+      /* A cached "missing" is not proof that no logins exist: wait for a real answer instead of offering first-time setup. */
+      if (snap && snap.metadata && snap.metadata.fromCache && snap.exists === false) authUnsure = true;
+    }, function () {});
   };
 
   var gateRole = null, gateMode = null;
@@ -1832,6 +1850,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       return Promise.all([cw, st, loadAuth()]).then(function () {
         /* View-only accounts go straight to the live view. */
         if (canWrite === false) { enter('spectator'); return; }
+        if (authUnsure) {
+          $('g-title').textContent = 'Waiting for connection';
+          gateMsg('Connect to the internet once so the app can load its saved logins. After that it keeps working offline.');
+          var again = function () { window.removeEventListener('online', again); init(); };
+          window.addEventListener('online', again);
+          return;
+        }
         var saved = remembered();
         if (saved && saved.role === 'spectator') { enter('spectator'); return; }
         if (saved && (saved.role === 'admin' || saved.role === 'counter') && !bioHas(saved.role) && auth[saved.role] && auth[saved.role].hash === saved.token) { enter(saved.role, saved.token); return; }
