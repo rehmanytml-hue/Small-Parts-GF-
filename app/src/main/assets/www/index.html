@@ -361,6 +361,13 @@ h2 { margin: 0 0 8px; font-family: var(--display); font-weight: 700; font-size: 
 .title-row { padding-right: 50px; }
 body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease; }
 
+.fp-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; }
+.fp-btn svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.fp-btn[hidden], .bio-opt[hidden], .linkbtn[hidden] { display: none; }
+.bio-opt { display: flex; align-items: center; gap: 10px; font-size: 15px; min-height: 44px; }
+.bio-opt input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
+.linkbtn { background: none; border: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; min-height: 40px; cursor: pointer; }
+
 .reasons { display: flex; flex-direction: column; gap: 14px; }
 .reason { display: flex; flex-direction: column; gap: 4px; }
 .r-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
@@ -556,10 +563,16 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         <label for="g-pw2">Repeat password</label>
         <input class="inp" type="password" id="g-pw2" autocomplete="off">
       </div>
+      <button type="button" class="btn fp-btn" id="g-fp" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 11v3.5c0 2-.6 3.8-1.6 5.3"/><path d="M8.5 9.5a3.5 3.5 0 0 1 7 0V14c0 1.6-.3 3.1-.9 4.5"/><path d="M5.5 8a6.5 6.5 0 0 1 13 0v6c0 1-.1 2-.4 3"/><path d="M5.5 11.5V14c0 2.3-.5 4.4-1.5 6"/></svg>
+        Use fingerprint or face
+      </button>
+      <label class="bio-opt" id="g-bio-wrap" hidden><input type="checkbox" id="g-bio"> Use fingerprint or face next time</label>
       <div class="actions">
         <button type="button" class="btn" id="g-back">Back</button>
         <button type="button" class="btn primary" id="g-go">Continue</button>
       </div>
+      <button type="button" class="linkbtn" id="g-fp-off" hidden>Turn off fingerprint on this device</button>
     </div>
     <div class="err" id="g-err" role="alert"></div>
   </div>
@@ -1443,6 +1456,35 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('g-roles').hidden = false; $('g-form').hidden = true; gateMsg('');
     $('gate').hidden = false; $('app').hidden = true;
   };
+  /* Fingerprint or face unlock. Only the Android app can offer it (it provides window.AndroidBiometric). */
+  var bio = window.AndroidBiometric || null;
+  var bioCalls = {};
+  var bioId = 0;
+  window.__bio = function (id, ok, token) { var f = bioCalls[id]; delete bioCalls[id]; if (f) f(!!ok, token || ''); };
+  var bioReady = function () { try { return !!(bio && bio.available()); } catch (e) { return false; } };
+  var bioHas = function (r) { try { return !!(bio && bio.has(r)); } catch (e) { return false; } };
+  var bioCall = function (name, args, done) {
+    var id = ++bioId;
+    bioCalls[id] = done;
+    try { bio[name].apply(bio, args.concat([id])); } catch (e) { delete bioCalls[id]; done(false, ''); }
+  };
+  var tryFinger = function () {
+    var r = gateRole;
+    if (!r || gateMode !== 'login') return;
+    bioCall('login', [r], function (ok, token) {
+      if (gateRole !== r) return;
+      if (!ok) return;
+      if (auth[r] && auth[r].hash && auth[r].hash === token) { enter(r, token); return; }
+      try { bio.forget(r); } catch (e) {}
+      openForm(r, 'login');
+      gateMsg('The password was changed, so fingerprint was turned off. Enter the password.');
+    });
+  };
+  var finishLogin = function (r, token) {
+    if ($('g-bio').checked && bioReady() && !bioHas(r)) {
+      bioCall('enroll', [r, token], function () { enter(r, token); });
+    } else enter(r, token);
+  };
   var openForm = function (r, mode) {
     gateRole = r; gateMode = mode;
     var setting = mode !== 'login';
@@ -1453,9 +1495,15 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('g-go').textContent = mode === 'login' ? 'Log in' : 'Save password';
     $('g-back').textContent = mode === 'change' ? 'Cancel' : 'Back';
     $('g-pw').value = ''; $('g-pw2').value = '';
+    var canBio = (r === 'admin' || r === 'counter') && mode !== 'change' && bioReady();
+    var has = canBio && bioHas(r);
+    $('g-fp').hidden = !(has && mode === 'login');
+    $('g-fp-off').hidden = !(has && mode === 'login');
+    $('g-bio-wrap').hidden = !canBio || has;
+    $('g-bio').checked = false;
     $('g-roles').hidden = true; $('g-form').hidden = false; gateMsg('');
     $('gate').hidden = false;
-    $('g-pw').focus();
+    if (has && mode === 'login') setTimeout(tryFinger, 300); else $('g-pw').focus();
   };
   var chooseRole = function (r) {
     if (r === 'spectator') { enter('spectator'); return; }
@@ -1475,7 +1523,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var rec = auth[r];
       hashWith(rec.alg || 's256', rec.salt + ':' + pw).then(function (hx) {
         if (hx !== rec.hash) { gateMsg('Wrong password.'); var gc = document.querySelector('.gate-card'); gc.classList.remove('shake'); void gc.offsetWidth; gc.classList.add('shake'); $('g-pw').select(); return; }
-        enter(r, rec.hash);
+        finishLogin(r, rec.hash);
       }, function () { gateMsg('This device cannot check the password. Try another browser.'); });
       return;
     }
@@ -1491,9 +1539,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
           auth = next;
           if (mode === 'change') {
             if (r === 'admin') remember('admin', rec.hash);
+            if (bioHas(r)) { try { bio.forget(r); } catch (e) {} }
             $('gate').hidden = true; $('app').hidden = false;
             setStatus(ROLE_NAME[r] + ' password changed');
-          } else enter(r, rec.hash);
+          } else finishLogin(r, rec.hash);
         });
       });
     }).catch(function () { gateMsg('Could not save the password. You may not have permission to edit.'); });
@@ -1556,6 +1605,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $(id).addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); submitGate(); } });
   });
   $('logout').addEventListener('click', logout);
+  $('g-fp').addEventListener('click', tryFinger);
+  $('g-fp-off').addEventListener('click', function () {
+    var r = gateRole;
+    try { bio.forget(r); } catch (e) {}
+    openForm(r, 'login');
+    gateMsg('Fingerprint turned off on this device.');
+  });
   $('pw-admin').addEventListener('click', function () { if (role === 'admin') openForm('admin', 'change'); });
   $('pw-counter').addEventListener('click', function () { if (role === 'admin') openForm('counter', 'change'); });
 
@@ -1623,7 +1679,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         if (canWrite === false) { enter('spectator'); return; }
         var saved = remembered();
         if (saved && saved.role === 'spectator') { enter('spectator'); return; }
-        if (saved && (saved.role === 'admin' || saved.role === 'counter') && auth[saved.role] && auth[saved.role].hash === saved.token) { enter(saved.role, saved.token); return; }
+        if (saved && (saved.role === 'admin' || saved.role === 'counter') && !bioHas(saved.role) && auth[saved.role] && auth[saved.role].hash === saved.token) { enter(saved.role, saved.token); return; }
         showRoles();
       });
     });

@@ -36,6 +36,10 @@ Phones must allow "Install unknown apps" to install an APK that is not from the 
 - The Admin and Production counter passwords are set inside the app the first time each role is opened.
 - "Share picture" opens the phone's own share sheet, so the graph can go straight to WhatsApp.
 
+## Fingerprint or face login
+
+On the login form for Admin or Production counter, tick **Use fingerprint or face next time** when you log in. After that, opening that role asks for the fingerprint instead of the password, and the app asks again each time it is reopened. The password still works. The option only appears on phones that have a fingerprint or face already set up. Changing a role's password turns the fingerprint off for that role.
+
 ## Limits to know
 
 - The app needs an internet connection.

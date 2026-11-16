@@ -1,8 +1,9 @@
 package com.yunus.hourlyrecorder;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
@@ -13,14 +14,20 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.biometric.BiometricManager;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
+
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
 
 /** Shows the Hourly Recorder page, which is packed inside the app, in a full-screen web view. */
-public class MainActivity extends Activity {
+public class MainActivity extends AppCompatActivity {
 
     private static final String HOST = "appassets.androidplatform.net";
     private static final String START = "https://" + HOST + "/assets/www/index.html";
@@ -67,6 +74,7 @@ public class MainActivity extends Activity {
         });
 
         webView.addJavascriptInterface(new ShareBridge(), "AndroidShare");
+        webView.addJavascriptInterface(new BiometricBridge(), "AndroidBiometric");
 
         if (savedInstanceState == null) {
             webView.loadUrl(START);
@@ -124,5 +132,99 @@ public class MainActivity extends Activity {
                 // Sharing failed; the page stays as it is.
             }
         }
+    }
+
+    /**
+     * Fingerprint or face unlock for the page. The page stores nothing secret here except the same
+     * login token it already keeps on the phone; the fingerprint is the lock that releases it.
+     */
+    private class BiometricBridge {
+        private static final int AUTH = BiometricManager.Authenticators.BIOMETRIC_WEAK;
+
+        private SharedPreferences prefs() {
+            return getSharedPreferences("bio", Context.MODE_PRIVATE);
+        }
+
+        @JavascriptInterface
+        public boolean available() {
+            return BiometricManager.from(MainActivity.this).canAuthenticate(AUTH)
+                    == BiometricManager.BIOMETRIC_SUCCESS;
+        }
+
+        @JavascriptInterface
+        public boolean has(String role) {
+            return prefs().contains("token_" + role);
+        }
+
+        @JavascriptInterface
+        public void forget(String role) {
+            prefs().edit().remove("token_" + role).apply();
+        }
+
+        @JavascriptInterface
+        public void enroll(final String role, final String token, final int callbackId) {
+            prompt("Turn on fingerprint login", "Confirm it is you", new Result() {
+                @Override
+                public void done(boolean ok) {
+                    if (ok) {
+                        prefs().edit().putString("token_" + role, token).apply();
+                    }
+                    reply(callbackId, ok, "");
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void login(final String role, final int callbackId) {
+            prompt("Log in", "Use your fingerprint or face", new Result() {
+                @Override
+                public void done(boolean ok) {
+                    String token = ok ? prefs().getString("token_" + role, "") : "";
+                    reply(callbackId, ok && token.length() > 0, token);
+                }
+            });
+        }
+
+        private void prompt(final String title, final String subtitle, final Result result) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+                            .setTitle(title)
+                            .setSubtitle(subtitle)
+                            .setNegativeButtonText("Cancel")
+                            .setAllowedAuthenticators(AUTH)
+                            .build();
+                    BiometricPrompt p = new BiometricPrompt(MainActivity.this,
+                            ContextCompat.getMainExecutor(MainActivity.this),
+                            new BiometricPrompt.AuthenticationCallback() {
+                                @Override
+                                public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) {
+                                    result.done(true);
+                                }
+
+                                @Override
+                                public void onAuthenticationError(int code, CharSequence message) {
+                                    result.done(false);
+                                }
+                            });
+                    p.authenticate(info);
+                }
+            });
+        }
+
+        private void reply(final int callbackId, final boolean ok, final String token) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    webView.evaluateJavascript("window.__bio(" + callbackId + "," + ok + ","
+                            + JSONObject.quote(token) + ")", null);
+                }
+            });
+        }
+    }
+
+    private interface Result {
+        void done(boolean ok);
     }
 }
