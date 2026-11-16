@@ -378,11 +378,27 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .oe-name small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
 .oe-row .inp { min-height: 44px; text-align: right; font-size: 18px; font-weight: 600; }
 .oe-sum { font-weight: 600; }
+.oe-row.last { padding: 8px; margin: 2px -8px 0; border-radius: 12px; background: var(--card-2, rgba(195, 214, 0, 0.16)); box-shadow: inset 0 0 0 2px var(--accent); }
 .sheet .actions.sticky { position: sticky; bottom: 0; background: var(--card); padding-top: 8px; }
 .od-card { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
 .od-card .wide { grid-column: 1 / -1; }
 .od-card .od-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--muted); }
 .loss .txt.slow { color: var(--muted); font-weight: 500; }
+/* output by operation */
+.opg-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.opg-pick .inp { flex: 1; min-width: 0; }
+.chart .opbar { fill: var(--c1); cursor: pointer; }
+.chart .opbar.bn { fill: var(--bad); }
+.chart .opbar.last { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 3; }
+.chart .opbar.sel { stroke: var(--ink); stroke-width: 2; stroke-dasharray: none; }
+.chart .avg { stroke: var(--ink); stroke-width: 1.6; stroke-dasharray: 1 4; stroke-linecap: round; }
+.bnk { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.bnk .st { padding: 10px 12px; border-radius: 12px; font-weight: 700; }
+.bnk .st.bad { background: var(--bad-bg); color: var(--bad); }
+.bnk .st.ok { background: var(--ok-bg); color: var(--ok); }
+.bnk .hd { font-weight: 700; }
+.bnk ul { margin: 0; padding-left: 18px; }
+.bnk li { margin: 4px 0; }
 .upd-pop { z-index: 60; }
 .upd-bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--ink); color: var(--card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
 .upd-bar[hidden] { display: none; }
@@ -580,6 +596,25 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     </div>
   </section>
 
+  <section class="card" id="opg-card" aria-labelledby="opg-h" hidden>
+    <h2 id="opg-h">Output by operation</h2>
+    <div class="opg-pick"><label class="lab" for="opg-hour">Show</label><select class="inp" id="opg-hour"></select></div>
+    <div class="chart" id="opg"></div>
+    <p class="hint" id="opg-detail" role="status">Tap a bar to see the operation.</p>
+    <div class="legend" aria-label="Chart key">
+      <span><i class="sw" style="background:var(--bad)"></i>Bottleneck</span>
+      <span><i class="sw" style="background:var(--c1)"></i>Other operations</span>
+      <span><i class="sw sw-bn"></i>Dashed outline sets the line output</span>
+      <span>Dotted line: average of all operations</span>
+    </div>
+    <div class="bnk" id="bnk"></div>
+    <div class="share-row">
+      <button type="button" class="btn primary" id="opg-share">Share operation graph as picture</button>
+      <span class="hint" id="opg-msg" role="status"></span>
+    </div>
+    <div class="share-out" id="opg-out" hidden></div>
+  </section>
+
   <section class="card" aria-labelledby="reasons-h">
     <h2 id="reasons-h">Loss by reason</h2>
     <div class="reasons" id="reasons"></div>
@@ -676,6 +711,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     <div class="sheet-body">
       <h2 id="od-title">Operations</h2>
       <p class="oe-sum" id="od-total"></p>
+      <p class="hint">The last operation in the list sets the line output for each hour. Fill in the operators on every operation to also see efficiency by operation.</p>
       <div class="oe-list" id="od-list"></div>
       <button type="button" class="btn" id="od-add">Add operation</button>
       <div class="err" id="od-err" role="alert"></div>
@@ -894,7 +930,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     if (Array.isArray(st.operations)) {
       var list = [];
       st.operations.forEach(function (o, i) {
-        if (o && String(o.name || '').trim() && Number(o.sam) > 0) list.push({ id: String(o.id || 'o' + (i + 1)).slice(0, 24), name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(Number(o.sam) * 100) / 100 });
+        if (o && String(o.name || '').trim() && Number(o.sam) > 0) list.push({ id: String(o.id || 'o' + (i + 1)).slice(0, 24), name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(Number(o.sam) * 100) / 100, crew: Number(o.crew) > 0 ? Math.min(99, Math.round(Number(o.crew))) : 0 });
       });
       operations = list;
     }
@@ -902,7 +938,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   };
   var persistSettings = function () {
     if (!db || role !== 'admin') return;
-    var value = { bottleneck: bottleneck, sam: STD_MINUTES, operations: operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam }; }) };
+    var value = { bottleneck: bottleneck, sam: STD_MINUTES, operations: operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam, crew: o.crew || 0 }; }) };
     chain = chain
       .then(function () { return db.doc('settings/main').set(value); })
       .then(function () { setStatus('Saved ' + clock()); }, function () { setStatus('Not saved: you may not have permission to edit', true); });
@@ -972,9 +1008,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       $('oe-sum').textContent = oeEditable ? (left ? left + ' operation' + (left > 1 ? 's' : '') + ' still empty' : 'Check the numbers') : '';
       return;
     }
-    var min = Math.min.apply(null, r.vals);
-    var at = operations[r.vals.indexOf(min)];
-    $('oe-sum').textContent = 'Line output ' + fInt(min) + ' (lowest: ' + at.name + ')';
+    var last = operations.length - 1;
+    $('oe-sum').textContent = 'Line output ' + fInt(r.vals[last]) + ' (from ' + operations[last].name + ')';
   };
   var openOpsEntry = function (key) {
     var rec = state.hours[key];
@@ -983,7 +1018,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     oeKey = key; oeEditable = editable; oeInputs = [];
     lastFocus = document.activeElement;
     $('oe-title').textContent = slotLabel(key);
-    $('oe-sub').textContent = editable ? 'Enter the pieces finished at every operation this hour.' : 'Recorded. Only the admin can change it.';
+    $('oe-sub').textContent = (editable ? 'Enter the pieces finished at every operation this hour.' : 'Recorded. Only the admin can change it.') + ' The last operation sets the line output.';
     $('oe-save').hidden = !editable;
     $('oe-cancel').textContent = editable ? 'Cancel' : 'Close';
     $('oe-err').textContent = '';
@@ -1000,7 +1035,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         if (oeInputs[i + 1]) oeInputs[i + 1].focus(); else $('oe-save').focus();
       });
       oeInputs.push(inp);
-      list.append(h('label', { class: 'oe-row' }, h('span', { class: 'oe-n', text: String(i + 1) }), h('span', { class: 'oe-name' }, o.name, h('small', { text: (o.machine ? o.machine + ' · ' : '') + 'SAM ' + fmt2(o.sam) })), inp));
+      list.append(h('label', { class: 'oe-row' + (i === operations.length - 1 ? ' last' : '') }, h('span', { class: 'oe-n', text: String(i + 1) }), h('span', { class: 'oe-name' }, o.name, h('small', { text: (o.machine ? o.machine + ' · ' : '') + 'SAM ' + fmt2(o.sam) })), inp));
     });
     oeUpdate();
     $('oe').hidden = false;
@@ -1020,7 +1055,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var prev = state.hours[key];
     var map = {};
     operations.forEach(function (o, i) { map[o.id] = r.vals[i]; });
-    var out = Math.min.apply(null, r.vals);
+    var out = r.vals[operations.length - 1];
     var rec = { out: out, ops: map };
     var low = isLow(eff(out));
     if (prev && prev.loss != null && low && prev.out === out) { rec.loss = prev.loss; rec.cause = prev.cause || ''; }
@@ -1041,13 +1076,15 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var name = h('input', { class: 'inp', type: 'text', value: o.name, placeholder: 'Operation', 'aria-label': 'Operation ' + (i + 1) });
       var mach = h('input', { class: 'inp', type: 'text', value: o.machine, placeholder: 'Machine', 'aria-label': 'Machine ' + (i + 1) });
       var sam = h('input', { class: 'inp', type: 'number', inputmode: 'decimal', min: '0.01', step: '0.01', value: String(o.sam), placeholder: 'SAM', 'aria-label': 'SAM ' + (i + 1) });
-      [name, mach, sam].forEach(function (el) { el.disabled = !admin; });
+      var crew = h('input', { class: 'inp', type: 'number', inputmode: 'numeric', min: '0', step: '1', value: o.crew ? String(o.crew) : '', placeholder: 'Operators (optional)', 'aria-label': 'Operators on operation ' + (i + 1) });
+      crew.addEventListener('input', function () { o.crew = Number(crew.value) || 0; });
+      [name, mach, sam, crew].forEach(function (el) { el.disabled = !admin; });
       name.addEventListener('input', function () { o.name = name.value; });
       mach.addEventListener('input', function () { o.machine = mach.value; });
       sam.addEventListener('input', function () { o.sam = Number(sam.value) || 0; odTotal(); });
       var head = h('div', { class: 'od-head' }, h('span', { text: 'Operation ' + (i + 1) }));
       if (admin) head.append(h('button', { type: 'button', class: 'btn small', text: 'Remove', onclick: function () { odDraft.splice(i, 1); odRender(); } }));
-      list.append(h('div', { class: 'od-card' }, head, h('div', { class: 'field wide' }, name), h('div', { class: 'field' }, mach), h('div', { class: 'field' }, sam)));
+      list.append(h('div', { class: 'od-card' }, head, h('div', { class: 'field wide' }, name), h('div', { class: 'field' }, mach), h('div', { class: 'field' }, sam), h('div', { class: 'field wide' }, crew)));
     });
     $('od-add').hidden = !admin;
     $('od-save').hidden = !admin;
@@ -1055,7 +1092,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   };
   var odTotal = function () { $('od-total').textContent = 'Total SAM ' + fmt2(odDraft.reduce(function (t, o) { return t + (o.sam > 0 ? o.sam : 0); }, 0)) + ' · ' + odDraft.length + ' operations'; };
   var openOpsEditor = function () {
-    odDraft = operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam }; });
+    odDraft = operations.map(function (o) { return { id: o.id, name: o.name, machine: o.machine, sam: o.sam, crew: o.crew || 0 }; });
     lastFocus = document.activeElement;
     $('od-err').textContent = '';
     $('od-cancel').textContent = role === 'admin' ? 'Cancel' : 'Close';
@@ -1070,7 +1107,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var o = odDraft[i];
       if (!String(o.name).trim()) { $('od-err').textContent = 'Operation ' + (i + 1) + ' needs a name.'; return; }
       if (!(o.sam > 0 && o.sam <= 99)) { $('od-err').textContent = 'Operation ' + (i + 1) + ' needs a SAM above 0.'; return; }
-      list.push({ id: o.id || 'o' + Date.now().toString(36) + i, name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(o.sam * 100) / 100 });
+      list.push({ id: o.id || 'o' + Date.now().toString(36) + i, name: String(o.name).trim().slice(0, 60), machine: String(o.machine || '').trim().slice(0, 30), sam: Math.round(o.sam * 100) / 100, crew: o.crew > 0 ? Math.min(99, Math.round(o.crew)) : 0 });
     }
     operations = list;
     if (operations.length) STD_MINUTES = sumSam(operations);
@@ -1288,6 +1325,120 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return n;
   };
 
+  /* ---------- output by operation: chart, bottleneck and suggestions ---------- */
+  var ABBR = { FACING: 'Face', MARKING: 'Mark', FOLDER: 'Fld', ATTACH: 'Att', CLOSE: 'Cls', TURNING: 'Turn', JETTING: 'Jet', 'O/LOCK': 'O/L', LINNING: 'Lining', POCKET: 'Pkt', ZIPPER: 'Zip', ELASTIC: 'Elas', BUTTON: 'Btn', BUTTONHOLE: 'B/hole', FINISHING: 'Fin', PACKING: 'Pack' };
+  var abbr = function (name) {
+    var words = String(name).toUpperCase().split(/\s+/).filter(function (w) { return w && !/^X\d+$/.test(w) && w !== 'AT' && w !== 'WITH' && w !== 'CUT'; });
+    var t = words.map(function (w) { return ABBR[w] || w.charAt(0) + w.slice(1).toLowerCase(); }).join(' ');
+    return t.length > 17 ? t.slice(0, 16) + '\u2026' : t;
+  };
+  var opgScope = 'day', opgSel = null;
+  var opgKeys = function () {
+    return SLOTS.map(function (s) { return s[0]; }).filter(function (k) { return state.hours[k] && state.hours[k].ops; });
+  };
+  var opgCompute = function () {
+    var all = opgKeys();
+    var keys = opgScope === 'day' ? all : all.filter(function (k) { return k === opgScope; });
+    var vals = operations.map(function (o) {
+      var t = 0, seen = false;
+      keys.forEach(function (k) { var n = state.hours[k].ops[o.id]; if (typeof n === 'number') { t += n; seen = true; } });
+      return seen ? t : null;
+    });
+    var out = keys.reduce(function (t, k) { return t + state.hours[k].out; }, 0);
+    var crewOk = operations.length > 0 && operations.every(function (o) { return o.crew > 0; });
+    var effs = vals.map(function (v, i) {
+      return crewOk && v !== null && keys.length ? v * operations[i].sam / (60 * operations[i].crew * keys.length) * 100 : null;
+    });
+    var lineEff = state.ops > 0 && keys.length ? out * STD_MINUTES / (60 * state.ops * keys.length) * 100 : null;
+    return { keys: keys, vals: vals, effs: effs, crewOk: crewOk, out: out, lineEff: lineEff };
+  };
+  var opgDetail = function (i, d) {
+    var o = operations[i];
+    var t = (i + 1) + ' · ' + o.name + (o.machine ? ' · ' + o.machine : '') + ' · ' + (d.vals[i] === null ? 'no data' : fInt(d.vals[i]) + ' pcs') + ' · SAM ' + fmt2(o.sam);
+    if (d.effs[i] !== null) t += ' · efficiency ' + fmt1(d.effs[i]) + '%';
+    $('opg-detail').textContent = t;
+  };
+  var renderOps = function () {
+    var card = $('opg-card');
+    var d = opgCompute();
+    var recorded = opgKeys();
+    card.hidden = !(operations.length && recorded.length);
+    if (card.hidden) return;
+    var sel = $('opg-hour');
+    var want = recorded.indexOf(opgScope) >= 0 ? opgScope : 'day';
+    opgScope = want;
+    if (document.activeElement !== sel) {
+      sel.replaceChildren.apply(sel, [h('option', { value: 'day', text: 'Whole day' })].concat(recorded.map(function (k) { return h('option', { value: k, text: slotLabel(k) }); })));
+      sel.value = opgScope;
+    }
+    d = opgCompute();
+    var vals = d.vals;
+    var known = vals.filter(function (v) { return v !== null; });
+    var box = $('opg');
+    if (!known.length) { box.replaceChildren(h('p', { class: 'empty', text: 'Record an hour by operation to see this chart.' })); $('bnk').replaceChildren(); return; }
+    var W = 360, H = 300, L = 6, R = 6, T = 26, B = 106;
+    var n = operations.length, slot = (W - L - R) / n, bw = Math.min(26, slot * 0.72);
+    var max = Math.max.apply(null, known) * 1.12 || 1;
+    var minV = Math.min.apply(null, known);
+    var bnIdx = vals.indexOf(minV);
+    var avg = known.reduce(function (t, v) { return t + v; }, 0) / known.length;
+    var y = function (v) { return T + (H - T - B) * (1 - v / max); };
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Output by operation. Bottleneck: ' + operations[bnIdx].name + ', ' + fInt(minV) + ' pieces.' });
+    svg.append(el('line', { class: 'axis', x1: L, x2: W - R, y1: H - B, y2: H - B }));
+    svg.append(el('line', { class: 'avg', x1: L, x2: W - R, y1: y(avg), y2: y(avg) }));
+    operations.forEach(function (o, i) {
+      var v = vals[i];
+      var cx = L + slot * i + slot / 2;
+      var g = el('g', { tabindex: 0, role: 'button', 'aria-label': 'Operation ' + (i + 1) + ' ' + o.name });
+      if (v !== null) {
+        var top = y(v);
+        var cls = 'opbar grow' + (i === bnIdx ? ' bn' : '') + (i === operations.length - 1 ? ' last' : '') + (opgSel === i ? ' sel' : '');
+        g.append(el('rect', { class: cls, x: cx - bw / 2, y: top, width: bw, height: Math.max(1, H - B - top), rx: 3 }));
+        g.append(el('text', { class: 'val', x: cx, y: top - 5, 'text-anchor': 'middle', style: 'font-size:10.5px' }, fInt(v)));
+      }
+      g.append(el('text', { class: 'tick', x: cx + 4, y: H - B + 8, 'text-anchor': 'end', transform: 'rotate(-90 ' + (cx + 4) + ' ' + (H - B + 8) + ')', style: 'font-size:11px' + (i === bnIdx ? ';fill:var(--bad);font-weight:700' : '') }, abbr(o.name)));
+      var pick = function () { opgSel = i; opgDetail(i, d); renderOps(); };
+      g.addEventListener('click', pick);
+      g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+      svg.append(g);
+    });
+    box.replaceChildren(svg);
+    if (opgSel !== null && opgSel < operations.length) opgDetail(opgSel, d);
+
+    /* the analysis */
+    var ranked = vals.map(function (v, i) { return { v: v, i: i }; }).filter(function (r) { return r.v !== null; }).sort(function (a, b) { return a.v - b.v; });
+    var per = d.keys.length || 1;
+    var bn = operations[bnIdx];
+    var best = ranked[ranked.length - 1];
+    var second = ranked[1];
+    var under = d.lineEff !== null && bottleneck > 0 && d.lineEff < bottleneck;
+    var nodes = [];
+    if (d.lineEff !== null) {
+      nodes.push(h('div', { class: 'st ' + (under ? 'bad' : 'ok'), text: under
+        ? 'Line efficiency ' + fmt1(d.lineEff) + '%, ' + fmt1(bottleneck - d.lineEff) + ' points under the ' + bottleneck + '% target.'
+        : 'Line efficiency ' + fmt1(d.lineEff) + '%' + (bottleneck > 0 ? ', on target (' + bottleneck + '%).' : '.') }));
+    }
+    nodes.push(h('div', { class: 'hd', text: (under ? 'Bottleneck: ' : 'Weakest point: ') + bn.name + ' (operation ' + (bnIdx + 1) + (bn.machine ? ', ' + bn.machine : '') + ')' }));
+    var why = [];
+    if (best && best.i !== bnIdx) why.push('It made ' + fInt(minV) + ' pieces' + (d.keys.length > 1 ? ' over ' + d.keys.length + ' hours' : '') + ', ' + fmt1((best.v - minV) / best.v * 100) + '% fewer than the busiest operation (' + operations[best.i].name + ', ' + fInt(best.v) + '). Work backs up before it and later operations wait.');
+    if (d.crewOk) {
+      var lowE = d.effs.map(function (e, i) { return { e: e, i: i }; }).filter(function (r) { return r.e !== null; }).sort(function (a, b) { return a.e - b.e; })[0];
+      if (lowE) why.push('Lowest efficiency by operation: ' + operations[lowE.i].name + ' at ' + fmt1(lowE.e) + '%.');
+    }
+    var ul = function (items) { return h.apply(null, ['ul', {}].concat(items.map(function (t) { return h('li', { text: t }); }))); };
+    if (why.length) nodes.push(ul(why));
+    var tips = [];
+    if (second && second.v > minV) tips.push('Raising ' + bn.name + ' to the level of the next slowest operation (' + operations[second.i].name + ') would add about ' + fInt((second.v - minV) / per) + ' pieces per hour.');
+    if (bn.machine && bn.machine !== 'MANUAL') tips.push('Check the ' + bn.machine + ' machine on this operation: breakdowns, needle and thread changes and setup time. Add a second machine or operator if it keeps running behind.');
+    else tips.push('This is a manual operation: add a helper or train a faster operator on it.');
+    if (best && best.i !== bnIdx && (best.v - minV) / best.v > 0.08) tips.push('Move help from ' + operations[best.i].name + ', which is ahead by ' + fInt((best.v - minV) / per) + ' pieces per hour.');
+    if (!d.crewOk) tips.push('Enter the operators for every operation (Operations button) to also see efficiency by operation.');
+    nodes.push(h('div', { class: 'hd', text: under ? 'What to do' : 'Keep an eye on' }));
+    nodes.push(ul(tips));
+    if (ranked.length > 2) nodes.push(h('div', { class: 'hint', text: 'Next slowest: ' + ranked.slice(1, 3).map(function (r) { return operations[r.i].name + ' (' + fInt(r.v) + ')'; }).join(', ') }));
+    $('bnk').replaceChildren.apply($('bnk'), nodes);
+  };
+
   /* One scale for the whole chart: bar height is output, and because output and efficiency move together
      the same height reads as efficiency % on the right axis. Lost efficiency stacks above the bar. */
   var renderChart = function () {
@@ -1483,6 +1634,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     afterRows();
     renderStitches();
     renderChart();
+    renderOps();
     renderReasons();
   };
 
@@ -1526,11 +1678,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   });
   $('m-save').addEventListener('click', saveLoss);
   $('m-skip').addEventListener('click', cancelModal);
+  $('opg-hour').addEventListener('change', function () { opgScope = $('opg-hour').value; opgSel = null; $('opg-detail').textContent = 'Tap a bar to see the operation.'; renderOps(); });
   $('oe-save').addEventListener('click', saveOps);
   $('oe-cancel').addEventListener('click', closeOps);
   $('oe').addEventListener('click', function (ev) { if (ev.target === $('oe')) closeOps(); });
   $('ops-btn').addEventListener('click', openOpsEditor);
-  $('od-add').addEventListener('click', function () { odDraft.push({ id: '', name: '', machine: '', sam: 0 }); odRender(); });
+  $('od-add').addEventListener('click', function () { odDraft.push({ id: '', name: '', machine: '', sam: 0, crew: 0 }); odRender(); });
   $('od-save').addEventListener('click', saveOpsEditor);
   $('od-cancel').addEventListener('click', closeOpsEditor);
   $('od').addEventListener('click', function (ev) { if (ev.target === $('od')) closeOpsEditor(); });
@@ -1684,13 +1837,14 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var total = recd.reduce(function (a, r) { return a + r.out; }, 0);
     return state.section + ' · ' + state.date + '\nOutput ' + fInt(total) + ' pieces over ' + recd.length + ' hours';
   };
-  var onShare = function () {
-    var msg = $('share-msg'), out = $('share-out');
+  var onShare = function (spec) {
+    spec = spec || { mk: makeImage, msg: 'share-msg', out: 'share-out', alt: spec.alt, name: 'hourly-' + state.date + '.png', text: shareText };
+    var msg = $(spec.msg), out = $(spec.out);
     msg.textContent = 'Making the picture…';
-    makeImage().then(function (blob) {
+    spec.mk().then(function (blob) {
       var url = URL.createObjectURL(blob);
-      var name = 'hourly-' + state.date + '.png';
-      var img = h('img', { src: url, alt: 'Output and efficiency graph' });
+      var name = spec.name;
+      var img = h('img', { src: url, alt: spec.alt });
       var acts = h('div', { class: 'acts' });
       var file = null;
       try { file = new File([blob], name, { type: 'image/png' }); } catch (e) { file = null; }
@@ -1698,7 +1852,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         /* Inside the Android app: hand the picture to the phone's own share sheet. */
         acts.append(h('button', { type: 'button', class: 'btn primary', text: 'Share picture', onclick: function () {
           var fr = new FileReader();
-          fr.onload = function () { window.AndroidShare.shareImage(String(fr.result).split(',')[1], shareText()); };
+          fr.onload = function () { window.AndroidShare.shareImage(String(fr.result).split(',')[1], spec.text()); };
           fr.readAsDataURL(blob);
         } }));
         out.replaceChildren(img, acts);
@@ -1708,7 +1862,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       }
       if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
         acts.append(h('button', { type: 'button', class: 'btn primary', text: 'Share picture', onclick: function () {
-          navigator.share({ files: [file], text: shareText() }).catch(function () { msg.textContent = 'Sharing was blocked here. Press and hold the picture to save or share it.'; });
+          navigator.share({ files: [file], text: spec.text() }).catch(function () { msg.textContent = 'Sharing was blocked here. Press and hold the picture to save or share it.'; });
         } }));
       }
       if (navigator.clipboard && window.ClipboardItem) {
@@ -1718,13 +1872,121 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       }
       var dl = h('a', { class: 'btn', href: url, download: name, text: 'Download', style: 'text-decoration:none;display:inline-flex;align-items:center' });
       acts.append(dl);
-      acts.append(h('a', { class: 'btn', href: 'https://wa.me/?text=' + encodeURIComponent(shareText()), target: '_blank', rel: 'noopener', text: 'WhatsApp', style: 'text-decoration:none;display:inline-flex;align-items:center' }));
+      acts.append(h('a', { class: 'btn', href: 'https://wa.me/?text=' + encodeURIComponent(spec.text()), target: '_blank', rel: 'noopener', text: 'WhatsApp', style: 'text-decoration:none;display:inline-flex;align-items:center' }));
       out.replaceChildren(img, acts);
       out.hidden = false;
       msg.textContent = 'Press and hold the picture to save or share it.';
     }, function () { msg.textContent = 'Could not make the picture.'; });
   };
-  $('share-btn').addEventListener('click', onShare);
+  $('share-btn').addEventListener('click', function () { onShare(); });
+
+  /* The operation graph as a picture: same bars, short names, bottleneck and the main advice. */
+  var wrapLines = function (c, text, maxW) {
+    var words = String(text).split(' '), lines = [], cur = '';
+    words.forEach(function (w) {
+      var t = cur ? cur + ' ' + w : w;
+      if (c.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  var makeOpsImage = function () {
+    var d = opgCompute();
+    var W = 1080, P = 48;
+    var font = getComputedStyle(document.body).fontFamily || 'sans-serif';
+    var ink = cssv('--ink'), muted = cssv('--muted'), card = cssv('--card'), line = cssv('--line');
+    var bad = cssv('--bad'), blue = cssv('--c1');
+    var known = d.vals.filter(function (v) { return v !== null; });
+    var st = $('bnk').querySelector('.st');
+    var hd = $('bnk').querySelector('.hd');
+    var lis = Array.prototype.slice.call($('bnk').querySelectorAll('li')).map(function (l) { return l.textContent; });
+    /* the advice lines: the first two "what to do" items, skipping the hint about entering operators */
+    var tips = lis.filter(function (t) { return t.indexOf('Enter the operators') !== 0; }).slice(0, 3);
+    var measure = document.createElement('canvas').getContext('2d');
+    measure.font = '500 27px ' + font;
+    var textLines = [];
+    if (hd) wrapLines(measure, hd.textContent, W - 2 * P).forEach(function (l) { textLines.push({ t: l, b: true }); });
+    tips.forEach(function (t) { wrapLines(measure, '\u2022 ' + t, W - 2 * P - 10).forEach(function (l, i) { textLines.push({ t: (i ? '   ' : '') + l, b: false }); }); });
+    var chartH = 340, labelH = 262;
+    var top = 232 + (st ? 92 : 0);
+    var H = top + 70 + chartH + labelH + 60 + textLines.length * 40 + 90;
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var c = cv.getContext('2d');
+    c.fillStyle = card; c.fillRect(0, 0, W, H);
+    c.save(); c.beginPath(); c.rect(0, 0, W, 14); c.clip();
+    for (var sx = -20; sx < W + 20; sx += 28) {
+      c.fillStyle = (sx / 28) % 2 === 0 ? cssv('--warn') : ink;
+      c.beginPath(); c.moveTo(sx, 14); c.lineTo(sx + 14, 0); c.lineTo(sx + 28, 0); c.lineTo(sx + 14, 14); c.closePath(); c.fill();
+    }
+    c.restore();
+    c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    c.fillStyle = ink; c.font = '700 46px ' + font; c.fillText(state.section, P, 86);
+    c.fillStyle = muted; c.font = '500 26px ' + font;
+    var dt = new Date(state.date + 'T00:00:00');
+    c.fillText(dt.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), P, 126);
+    var infoLine = INFO.filter(function (f) { return state[f[0]]; }).map(function (f) { return f[1] + ': ' + state[f[0]]; }).join('   \u00b7   ');
+    if (infoLine) { c.textAlign = 'right'; c.font = '600 24px ' + font; c.fillStyle = ink; c.fillText(infoLine, W - P, 126, W - 2 * P - 420); c.textAlign = 'left'; }
+    c.fillStyle = ink; c.font = '700 34px ' + font;
+    c.fillText('Output by operation \u00b7 ' + (opgScope === 'day' ? 'whole day' : slotLabel(opgScope)), P, 186);
+    var y0 = 214;
+    if (st) {
+      rrect(c, P, y0, W - 2 * P, 70, 16);
+      c.fillStyle = st.classList.contains('bad') ? cssv('--bad-bg') : cssv('--ok-bg'); c.fill();
+      c.fillStyle = st.classList.contains('bad') ? bad : cssv('--ok'); c.font = '700 28px ' + font;
+      c.fillText(st.textContent, P + 22, y0 + 45, W - 2 * P - 44);
+      y0 += 92;
+    }
+    /* bars */
+    var n = operations.length, plotL = P, plotW = W - 2 * P, slot = plotW / n, bw = Math.min(64, slot * 0.72);
+    var base = y0 + 40 + chartH;
+    var max = (known.length ? Math.max.apply(null, known) : 1) * 1.12 || 1;
+    var yy = function (v) { return base - (chartH * v / max); };
+    var minV = known.length ? Math.min.apply(null, known) : 0;
+    var bnIdx = d.vals.indexOf(minV);
+    var avg = known.length ? known.reduce(function (t, v) { return t + v; }, 0) / known.length : 0;
+    c.strokeStyle = muted; c.lineWidth = 2; c.beginPath(); c.moveTo(plotL, base); c.lineTo(plotL + plotW, base); c.stroke();
+    c.save(); c.setLineDash([2, 9]); c.lineCap = 'round'; c.strokeStyle = ink; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(plotL, yy(avg)); c.lineTo(plotL + plotW, yy(avg)); c.stroke(); c.restore();
+    operations.forEach(function (o, i) {
+      var v = d.vals[i];
+      var cx = plotL + slot * i + slot / 2;
+      if (v !== null) {
+        var ty = yy(v);
+        rrect(c, cx - bw / 2, ty, bw, base - ty, 8);
+        c.fillStyle = i === bnIdx ? bad : blue; c.fill();
+        if (i === operations.length - 1) { c.save(); c.setLineDash([10, 7]); c.lineWidth = 3.5; c.strokeStyle = ink; c.stroke(); c.restore(); }
+        c.fillStyle = ink; c.font = '700 24px ' + font; c.textAlign = 'center';
+        c.lineWidth = 7; c.strokeStyle = card; c.lineJoin = 'round'; c.strokeText(fInt(v), cx, ty - 12);
+        c.fillText(fInt(v), cx, ty - 12);
+      }
+      c.save(); c.translate(cx + 8, base + 16); c.rotate(-Math.PI / 2);
+      c.textAlign = 'right'; c.fillStyle = i === bnIdx ? bad : ink; c.font = (i === bnIdx ? '700 ' : '500 ') + '24px ' + font;
+      c.fillText(abbr(o.name), 0, 0);
+      c.restore();
+    });
+    /* legend */
+    var ly = base + labelH + 10;
+    c.textAlign = 'left'; c.font = '500 22px ' + font; c.fillStyle = muted;
+    c.fillText('Red: bottleneck   \u00b7   Dashed outline: sets the line output   \u00b7   Dotted line: average', P, ly);
+    /* advice */
+    var ty2 = ly + 52;
+    textLines.forEach(function (l) {
+      c.font = (l.b ? '700 ' : '500 ') + '27px ' + font; c.fillStyle = ink;
+      c.fillText(l.t, P, ty2, W - 2 * P);
+      ty2 += 40;
+    });
+    return new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png'); });
+  };
+  var opsShareText = function () {
+    var d = opgCompute();
+    var known = d.vals.filter(function (v) { return v !== null; });
+    var bn = known.length ? operations[d.vals.indexOf(Math.min.apply(null, known))].name : '';
+    return state.section + ' \u00b7 ' + state.date + '\nOutput by operation' + (bn ? ' \u00b7 bottleneck: ' + bn : '');
+  };
+  $('opg-share').addEventListener('click', function () {
+    onShare({ mk: makeOpsImage, msg: 'opg-msg', out: 'opg-out', alt: 'Output by operation graph', name: 'operations-' + state.date + '.png', text: opsShareText });
+  });
 
 
   /* ---------- login and roles ---------- */
@@ -1899,7 +2161,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       entrance = true;
       seen = { bars: {}, pts: -1, reasons: {}, stitches: {}, tiles: [], rows: {}, key: '' };
       document.body.classList.add('entering');
-      $('chart').replaceChildren(); $('tiles').replaceChildren(); $('reasons').replaceChildren(); $('causekey').replaceChildren();
+      $('chart').replaceChildren(); $('opg').replaceChildren(); $('bnk').replaceChildren(); $('tiles').replaceChildren(); $('reasons').replaceChildren(); $('causekey').replaceChildren();
       setStatus('Connecting…');
       watch();
       watchTimer = setInterval(function () { if (role === 'spectator') watch(); }, 10000);
