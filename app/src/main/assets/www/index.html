@@ -1368,8 +1368,18 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var card = $('opg-card');
     var d = opgCompute();
     var recorded = opgKeys();
-    card.hidden = !(operations.length && recorded.length);
+    card.hidden = !operations.length;
     if (card.hidden) return;
+    $('opg-hour').parentNode.hidden = !recorded.length;
+    $('opg-share').parentNode.hidden = !recorded.length;
+    if (!recorded.length) {
+      $('opg').replaceChildren(h('p', { class: 'empty', text: 'No hour has been entered by operation yet. Tap an hour in the hour log and enter the pieces for each operation, and the graph appears here.' }));
+      $('bnk').replaceChildren();
+      $('opg-basis').textContent = '';
+      $('opg-detail').textContent = '';
+      $('opg-out').hidden = true;
+      return;
+    }
     var sel = $('opg-hour');
     var want = recorded.indexOf(opgScope) >= 0 ? opgScope : 'day';
     opgScope = want;
@@ -1866,7 +1876,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return state.section + ' · ' + state.date + '\nOutput ' + fInt(total) + ' pieces over ' + recd.length + ' hours';
   };
   var onShare = function (spec) {
-    spec = spec || { mk: makeImage, msg: 'share-msg', out: 'share-out', alt: spec.alt, name: 'hourly-' + state.date + '.png', text: shareText };
+    spec = spec || { mk: makeImage, msg: 'share-msg', out: 'share-out', alt: 'Output and efficiency graph', name: 'hourly-' + state.date + '.png', text: shareText };
     var msg = $(spec.msg), out = $(spec.out);
     msg.textContent = 'Making the picture…';
     spec.mk().then(function (blob) {
