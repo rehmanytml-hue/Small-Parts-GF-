@@ -912,20 +912,50 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   };
 
   /* ---------- saving ---------- */
+  /* Several phones can edit the same day. Remember what each hour looked like when this phone last synced, so a save
+     only changes the hours edited here and keeps hours another phone entered in the meantime. */
+  var baseHours = {}, saving = 0;
+  var hourSig = function (r) { return r ? JSON.stringify(r) : ''; };
+  var resetBase = function () { baseHours = {}; Object.keys(state.hours).forEach(function (k) { baseHours[k] = hourSig(state.hours[k]); }); };
+  var localChanges = function () {
+    var keys = {};
+    Object.keys(state.hours).forEach(function (k) { if (hourSig(state.hours[k]) !== (baseHours[k] || '')) keys[k] = true; });
+    Object.keys(baseHours).forEach(function (k) { if (!state.hours[k]) keys[k] = true; });
+    return Object.keys(keys);
+  };
   var persist = function () {
     if (!db) { setStatus('Not saved: saving is not available on this screen', true); return; }
     if (role !== 'admin' && role !== 'counter') return;
     var snap = JSON.parse(JSON.stringify(state));
+    var changed = localChanges();
     setStatus('Saving…');
+    saving += 1;
     chain = chain
-      .then(function () { return db.doc(docPath(snap)).set(snap); })
       .then(function () {
+        return withTimeout(db.doc(docPath(snap)).get(), 6000).then(unwrap, function () { return null; });
+      })
+      .then(function (remote) {
+        var merged = snap;
+        if (remote) {
+          var r = normalize(remote, snap);
+          var hours = r.hours;
+          changed.forEach(function (k) { if (snap.hours[k]) hours[k] = snap.hours[k]; else delete hours[k]; });
+          merged = JSON.parse(JSON.stringify(snap));
+          merged.hours = hours;
+        }
+        return db.doc(docPath(snap)).set(merged).then(function () { return merged; });
+      })
+      .then(function (merged) {
+        baseHours = {};
+        Object.keys(merged.hours).forEach(function (k) { baseHours[k] = hourSig(merged.hours[k]); });
+        /* Pick up hours another phone added, unless this phone has changed something since the save started. */
+        if (docPath(state) === docPath(snap) && hourSig(state.hours) === hourSig(snap.hours) && hourSig(merged.hours) !== hourSig(snap.hours)) { state.hours = JSON.parse(JSON.stringify(merged.hours)); render(); }
         /* Tell spectators which section is being recorded today. */
         if (snap.date !== toISO(new Date()) || liveKey === docPath(snap)) return null;
         liveKey = docPath(snap);
         return db.doc('live/main').set({ date: snap.date, section: snap.section }).catch(function () {});
       })
-      .then(function () { setStatus('Saved ' + clock()); }, function () { setStatus('Not saved: you may not have permission to edit', true); });
+      .then(function () { saving -= 1; setStatus('Saved ' + clock()); }, function () { saving -= 1; setStatus('Not saved: you may not have permission to edit', true); });
   };
   var applyOperations = function (st) {
     if (!st) return;
@@ -952,6 +982,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     setStatus('Loading…');
     var done = function (data) {
       state = data ? normalize(data, base) : newDay(date, section, state.strength, state.ops, state);
+      resetBase();
       render();
     };
     if (!db) { done(null); setStatus('Not saved on this screen', true); return Promise.resolve(); }
@@ -2185,7 +2216,33 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       });
     }).catch(function () { gateMsg('Could not save the password. You may not have permission to edit.'); });
   };
-  var stopWatch = function () { if (watchTimer) { clearInterval(watchTimer); watchTimer = null; } };
+  var syncTimer = null;
+  var stopWatch = function () { if (watchTimer) { clearInterval(watchTimer); watchTimer = null; } if (syncTimer) { clearInterval(syncTimer); syncTimer = null; } };
+  /* Admin and counter phones refresh from the shared data when they are not in the middle of an edit. */
+  var syncNow = function () {
+    if (!db || (role !== 'admin' && role !== 'counter')) return;
+    if (!$('modal').hidden || !$('oe').hidden || !$('od').hidden) return;
+    var ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && !ae.readOnly && ae.id !== 'opg-hour') return;
+    if (saving > 0 || localChanges().length) return;
+    var date = state.date, section = state.section;
+    var get = function (path) { return withTimeout(db.doc(path).get(), 8000).then(unwrap, function () { return undefined; }); };
+    Promise.all([get('settings/main'), get(docPath(state))]).then(function (res) {
+      var st = res[0], day = res[1];
+      if (state.date !== date || state.section !== section || saving > 0 || localChanges().length) return;
+      if (!$('modal').hidden || !$('oe').hidden || !$('od').hidden) return;
+      var before = JSON.stringify([bottleneck, STD_MINUTES, operations, state]);
+      if (st && Number(st.bottleneck) >= 0 && Number(st.bottleneck) <= 100) bottleneck = Math.round(Number(st.bottleneck));
+      if (st && Number(st.sam) > 0 && Number(st.sam) <= 999) STD_MINUTES = Number(st.sam);
+      applyOperations(st);
+      if (day) {
+        var next = normalize(day, { date: date, section: section, strength: state.strength, ops: state.ops });
+        state = next;
+        resetBase();
+      }
+      if (JSON.stringify([bottleneck, STD_MINUTES, operations, state]) !== before) render();
+    });
+  };
   var watch = function () {
     var today = toISO(new Date());
     var get = function (path) { return withTimeout(db.doc(path).get(), 10000).then(unwrap, function () { return undefined; }); };
@@ -2215,6 +2272,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('logout').hidden = liveOnly;
     $('gate').hidden = true; $('app').hidden = false;
     stopWatch();
+    if (r !== 'spectator') syncTimer = setInterval(syncNow, 8000);
     if (r === 'spectator') {
       entrance = true;
       seen = { bars: {}, pts: -1, reasons: {}, stitches: {}, tiles: [], rows: {}, key: '' };
