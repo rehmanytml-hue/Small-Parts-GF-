@@ -1481,12 +1481,16 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var bn = operations[bnIdx];
     var best = ranked[ranked.length - 1];
     var second = ranked[1];
-    var under = d.lineEff !== null && bottleneck > 0 && d.lineEff < bottleneck;
+    var lastI = operations.length - 1;
+    var lastEff = d.effs[lastI];
+    var under = lastEff !== null && bottleneck > 0 && lastEff < bottleneck;
+    var scopeTxt = opgScope === 'day' ? 'all hours' : 'selected hour';
     var nodes = [];
-    if (d.lineEff !== null) {
+    if (lastEff !== null) {
+      var who = 'Last operation (' + operations[lastI].name + ') efficiency ' + fmt1(lastEff) + '% for ' + scopeTxt;
       nodes.push(h('div', { class: 'st ' + (under ? 'bad' : 'ok'), text: under
-        ? 'Line efficiency ' + fmt1(d.lineEff) + '%, ' + fmt1(bottleneck - d.lineEff) + ' points under the ' + bottleneck + '% target.'
-        : 'Line efficiency ' + fmt1(d.lineEff) + '%' + (bottleneck > 0 ? ', on target (' + bottleneck + '%).' : '.') }));
+        ? who + ', ' + fmt1(bottleneck - lastEff) + ' points under the ' + bottleneck + '% target.'
+        : who + (bottleneck > 0 ? ', on target (' + bottleneck + '%).' : '.') }));
     }
     nodes.push(h('div', { class: 'hd', text: (under ? 'Bottleneck: ' : 'Weakest point: ') + bn.name + ' (operation ' + (bnIdx + 1) + (bn.machine ? ', ' + bn.machine : '') + ')' }));
     var why = [];
