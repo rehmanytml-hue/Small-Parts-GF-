@@ -370,6 +370,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 
 .net { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--warn); color: var(--warn-ink); font-weight: 600; font-size: 14px; }
 .net[hidden] { display: none; }
+.upd-pop { z-index: 60; }
 .upd-bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 45; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--ink); color: var(--card); border-radius: 12px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
 .upd-bar[hidden] { display: none; }
 .upd-bar span { flex: 1 1 140px; font-weight: 600; font-size: 15px; }
@@ -446,10 +447,18 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   <svg class="t-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5z"/></svg>
   <svg class="t-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>
 </button>
-<div class="upd-bar" id="upd-bar" hidden role="status">
-  <span id="upd-text"></span>
-  <button type="button" class="btn small primary" id="upd-go">Update</button>
-  <button type="button" class="btn small" id="upd-later">Later</button>
+<div class="overlay upd-pop" id="upd-bar" hidden>
+  <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="upd-title" aria-describedby="upd-text">
+    <div class="stripe" aria-hidden="true"></div>
+    <div class="sheet-body">
+      <h2 id="upd-title">Update available</h2>
+      <p id="upd-text"></p>
+      <div class="actions">
+        <button type="button" class="btn" id="upd-later">Later</button>
+        <button type="button" class="btn primary" id="upd-go">Update now</button>
+      </div>
+    </div>
+  </div>
 </div>
 <div class="intro" id="intro" aria-hidden="true">
   <div class="intro-in">
@@ -755,16 +764,20 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     el.className = 'status' + (bad ? ' bad' : '');
   };
 
-  /* An hour can be recorded once it has finished. Earlier days are open, later days are closed. */
+  /* The admin can edit any hour of any day. The counter can only work on today, once an hour has finished,
+     and cannot change an hour that is already recorded (see counterHolds). */
   var isOpen = function (key) {
     if (role === 'admin') return true;
     var now = new Date();
     var today = toISO(now);
-    if (state.date < today) return true;
-    if (state.date > today) return false;
+    if (state.date !== today) return false;
     return now.getHours() * 60 + now.getMinutes() >= END_HOUR[key] * 60;
   };
-  var opensText = function (key) { return state.date > toISO(new Date()) ? 'Not started' : 'Opens at ' + hr12(END_HOUR[key]); };
+  var counterHolds = function (key) { return role === 'counter' && !!state.hours[key]; };
+  var opensText = function (key) {
+    var today = toISO(new Date());
+    return state.date > today ? 'Not started' : state.date < today ? 'Locked' : 'Opens at ' + hr12(END_HOUR[key]);
+  };
   var eff = function (out) { return state.ops > 0 ? (out * STD_MINUTES) / (60 * state.ops) * 100 : null; };
   var isLow = function (e) { return bottleneck > 0 && e !== null && e < bottleneck; };
   var capacity = function () { return state.ops > 0 ? (60 * state.ops) / STD_MINUTES : 0; };
@@ -844,6 +857,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     if (role !== 'admin' && role !== 'counter') { render(); return; }
     var txt = String(raw).trim();
     var prev = state.hours[key];
+    if (counterHolds(key)) { render(); return; }
     if (txt === '') {
       if (prev) { delete state.hours[key]; persist(); }
       render();
@@ -870,6 +884,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     Array.prototype.forEach.call($('m-chips').children, function (c) { c.setAttribute('aria-pressed', c.getAttribute('data-cause') === cur ? 'true' : 'false'); });
   };
   var askLoss = function (key, isNew) {
+    if (role !== 'admin' && !isNew && (!isOpen(key) || (state.hours[key] && state.hours[key].loss != null))) return;
     if (!isNew) pending = null;
     $('m-skip').textContent = isNew ? 'Cancel entry' : 'Close';
     var rec = state.hours[key];
@@ -950,22 +965,22 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var rec = state.hours[key];
       if (document.activeElement !== r.input) r.input.value = rec ? String(rec.out) : '';
       var open = isOpen(key);
-      r.input.disabled = !open;
+      r.input.disabled = !open || counterHolds(key);
       r.input.placeholder = open ? 'Pieces' : 'Locked';
-      if (!open) {
-        r.row.className = 'row locked';
-        r.pill.className = 'pill';
-        r.pill.textContent = '—';
-        r.loss.hidden = false;
-        r.loss.replaceChildren(h('span', { class: 'txt', text: opensText(key) }));
-        if (!rec) return;
-      }
       if (!rec) {
-        r.row.className = 'row';
-        r.pill.className = 'pill';
-        r.pill.textContent = '—';
-        r.loss.hidden = true;
-        r.loss.replaceChildren();
+        if (!open) {
+          r.row.className = 'row locked';
+          r.pill.className = 'pill';
+          r.pill.textContent = '—';
+          r.loss.hidden = false;
+          r.loss.replaceChildren(h('span', { class: 'txt', text: opensText(key) }));
+        } else {
+          r.row.className = 'row';
+          r.pill.className = 'pill';
+          r.pill.textContent = '—';
+          r.loss.hidden = true;
+          r.loss.replaceChildren();
+        }
         return;
       }
       var e = eff(rec.out);
@@ -973,18 +988,16 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       r.row.className = 'row ' + (low ? 'low' : bottleneck > 0 ? 'ok' : '') + (open ? '' : ' locked');
       r.pill.className = 'pill ' + (low ? 'low' : bottleneck > 0 ? 'ok' : '');
       r.pill.textContent = e === null ? '—' : fmt1(e) + '%';
-      if (open) r.loss.replaceChildren();
-      if (!low) { if (open) r.loss.hidden = true; return; }
-      if (!open) return;
+      r.loss.replaceChildren();
+      if (!low) { r.loss.hidden = true; return; }
       r.loss.hidden = false;
       if (rec.loss != null) {
         var name = causeName(rec);
-        r.loss.append(
-          h('span', { class: 'txt' }, h('i', { class: 'dot', style: 'background:' + causeColor(name) }), 'Loss ' + fmt1(rec.loss) + '%' + (rec.cause ? ' · ' + rec.cause : '')),
-          h('button', { type: 'button', class: 'btn', text: 'Edit', onclick: function () { askLoss(key); } })
-        );
+        r.loss.append(h('span', { class: 'txt' }, h('i', { class: 'dot', style: 'background:' + causeColor(name) }), 'Loss ' + fmt1(rec.loss) + '%' + (rec.cause ? ' \u00b7 ' + rec.cause : '')));
+        if (open && role === 'admin') r.loss.append(h('button', { type: 'button', class: 'btn', text: 'Edit', onclick: function () { askLoss(key); } }));
       } else {
-        r.loss.append(h('span', { class: 'txt', text: 'Reason needed' }), h('button', { type: 'button', class: 'btn amber', text: 'Add reason', onclick: function () { askLoss(key); } }));
+        r.loss.append(h('span', { class: 'txt', text: open ? 'Reason needed' : 'Reason missing' }));
+        if (open) r.loss.append(h('button', { type: 'button', class: 'btn amber', text: 'Add reason', onclick: function () { askLoss(key); } }));
       }
     });
   };
@@ -1776,7 +1789,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         if (r.state === 'available') {
           found = r;
           msg.textContent = 'Version ' + r.code + ' is ready to install.';
-          show('A new version is available.', true, 'Update');
+          show('Version ' + r.code + ' is ready. Update now to get the latest fixes and features.', true, 'Update now');
         } else if (r.state === 'latest') {
           if (manual) msg.textContent = 'You have the latest version.';
         } else if (manual) {
@@ -1805,7 +1818,18 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     });
     later.addEventListener('click', function () { bar.hidden = true; });
     $('about-btn').addEventListener('click', function () { check(true); });
-    setTimeout(function () { check(false); }, 3800);
+    /* Pop up when a new version is out: at start, every half hour, and when the app comes back to the front. */
+    var snoozeUntil = 0, lastCheck = 0;
+    var auto = function () {
+      if (busy || !bar.hidden || Date.now() < snoozeUntil) return;
+      if (document.getElementById('modal') && !document.getElementById('modal').hidden) { setTimeout(auto, 20000); return; }
+      lastCheck = Date.now();
+      check(false);
+    };
+    later.addEventListener('click', function () { snoozeUntil = Date.now() + 3 * 3600 * 1000; });
+    setTimeout(auto, 3800);
+    setInterval(auto, 30 * 60 * 1000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - lastCheck > 10 * 60 * 1000) auto(); });
   })();
 
   /* ---------- intro ---------- */

@@ -23,6 +23,11 @@ import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.webkit.WebViewAssetLoader;
+import androidx.work.Constraints;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.NetworkType;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 import org.json.JSONObject;
 
@@ -31,6 +36,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.io.FileOutputStream;
+import java.util.concurrent.TimeUnit;
 
 /** Shows the Hourly Recorder page, which is packed inside the app, in a full-screen web view. */
 public class MainActivity extends AppCompatActivity {
@@ -40,6 +46,22 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView webView;
 
+    /** Checks for a new version in the background about once an hour and posts a notification when there is one. */
+    private void scheduleUpdateChecks() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 7);
+        }
+        androidx.core.app.NotificationManagerCompat.from(this).cancel(4201);
+        try {
+            PeriodicWorkRequest req = new PeriodicWorkRequest.Builder(UpdateWorker.class, 1, TimeUnit.HOURS)
+                    .setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .build();
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork("update-check", ExistingPeriodicWorkPolicy.KEEP, req);
+        } catch (Exception ignored) {
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
 
         webView = new WebView(this);
         setContentView(webView);
+        scheduleUpdateChecks();
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
