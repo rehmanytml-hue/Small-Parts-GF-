@@ -393,6 +393,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .ow-none { color: var(--muted); font-size: 14px; }
 .ow-msg { font-size: 13px; color: var(--muted); min-height: 1em; }
 .ow-msg.bad { color: var(--bad, #c0392b); }
+#ow [hidden] { display: none !important; }
+.ow-ask { display: grid; gap: 10px; padding: 12px; border: 2px solid var(--accent); border-radius: 14px; background: var(--card); }
+.ow-ask p { margin: 0; font-size: 15px; line-height: 1.35; }
 .ow-apply { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; line-height: 1.3; }
 .ow-apply input { width: 22px; height: 22px; flex: none; margin: 0; }
 .ow-lock { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; }
@@ -403,7 +406,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .ow-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
 .ow-row .nm { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .ow-row .nm small { display: block; font-weight: 400; color: var(--muted); }
-.ow-row select { grid-column: 1 / -1; }
+.ow-row .sels { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ow-tag { font-size: 12px; font-weight: 700; color: var(--accent-ink, var(--muted)); text-transform: uppercase; letter-spacing: 0.04em; }
 .ow-row .rm { min-width: 44px; min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: inherit; font-size: 20px; cursor: pointer; }
 .ow-name { font-weight: 700; min-height: 1.3em; }
 .ow-name.bad { color: var(--bad, #c0392b); font-weight: 500; }
@@ -421,11 +425,15 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .od-ord.drag { position: relative; z-index: 6; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28); border-color: var(--accent); transition: none; }
 .od-ord.last { box-shadow: inset 0 0 0 2px var(--accent); }
 .od-ord.drag.last { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28), inset 0 0 0 2px var(--accent); }
+.men-note { margin: -4px 0 10px; font-size: 14px; line-height: 1.4; color: var(--muted); }
+.men-note b { color: var(--ink); }
+.men-note[hidden] { display: none; }
 .opr-grp { margin-top: 14px; }
 .opr-gh { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .opr-gh small { font-weight: 500; color: var(--muted); }
 .opr-grp.last .opr-gh { border-bottom: 2px solid var(--accent); }
 .opr-row { display: grid; grid-template-columns: 118px 1fr auto; gap: 8px; align-items: center; padding: 5px 0; font-size: 14px; }
+.opr-hl { grid-column: 2 / 4; font-size: 13px; color: var(--muted); font-style: italic; }
 .opr-nm { min-width: 0; font-size: 13px; line-height: 1.15; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .opr-track { display: block; height: 20px; border-radius: 6px; background: var(--line); overflow: hidden; }
 .opr-bar { display: block; height: 100%; border-radius: 6px; background: var(--c1); min-width: 2px; }
@@ -631,6 +639,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 
   <section class="card" aria-labelledby="chart-h">
     <h2 id="chart-h">Output and efficiency by hour</h2>
+    <p class="men-note" id="chart-men"></p>
     <div class="chart" id="chart"></div>
     <div class="causekey" id="causekey"></div>
     <div class="share-row">
@@ -786,12 +795,18 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         <div class="ow-name" id="ow-name" aria-live="polite"></div>
         <div class="field" id="ow-manual" hidden><label for="ow-typed">Operator name</label><input class="inp" type="text" id="ow-typed" maxlength="60" autocomplete="off" autocapitalize="characters"></div>
         <div class="field"><label for="ow-op">Operation</label><select class="inp" id="ow-op"></select></div>
+        <div class="field"><label for="ow-role">Role</label><select class="inp" id="ow-role"><option value="op">Operator (enters pieces)</option><option value="help">Helper (no pieces, counts in manpower)</option></select></div>
         <button type="button" class="btn primary" id="ow-addbtn">Add operator</button>
       </div>
       <div class="oe-list" id="ow-list"></div>
-      <label class="ow-apply" id="ow-apply-wrap" hidden><input type="checkbox" id="ow-apply"><span>Also change the hours already recorded today to this manpower. Leave it off if the change only applies from now on.</span></label>
       <div class="err" id="ow-err" role="alert"></div>
-      <div class="actions sticky">
+      <div class="ow-ask" id="ow-ask" hidden>
+        <p id="ow-ask-text"></p>
+        <button type="button" class="btn primary" id="ow-ask-yes">Change recorded hours too</button>
+        <button type="button" class="btn" id="ow-ask-no">Only from now on</button>
+        <button type="button" class="btn" id="ow-ask-back">Back</button>
+      </div>
+      <div class="actions sticky" id="ow-actions">
         <button type="button" class="btn" id="ow-cancel">Cancel</button>
         <button type="button" class="btn primary" id="ow-save">Save operators</button>
       </div>
@@ -941,7 +956,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       var id = p && String(p.id || '').replace(/\D/g, '').slice(0, 10);
       if (!id || seen[id]) return;
       seen[id] = true;
-      list.push({ id: id, name: String(p.name || '').trim().slice(0, 60) });
+      list.push({ id: id, name: String(p.name || '').trim().slice(0, 60), op: String(p.op || '').slice(0, 24) });
     });
     return list;
   };
@@ -1009,6 +1024,23 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   /* An hour saved with operators assigned keeps its own manpower, so later changes to the operators do not move it. */
   var eff = function (out, men) { var m = men > 0 ? men : state.ops; return m > 0 ? (out * STD_MINUTES) / (60 * m) * 100 : null; };
   var isLow = function (e) { return bottleneck > 0 && e !== null && e < bottleneck; };
+  /* Strength, operators and helpers for the graph caption and the shared picture. */
+  var manning = function () {
+    var crewN = crewCount(state.crew), seen = {};
+    Object.keys(state.crew || {}).forEach(function (op) { state.crew[op].forEach(function (p) { seen[p.id] = true; }); });
+    var help = (state.helpers || []).filter(function (p) { return !seen[p.id]; });
+    var total = state.ops;
+    var line1 = 'Strength ' + state.strength + '  \u00b7  On the line ' + total + (crewN || help.length ? ' (' + crewN + (crewN === 1 ? ' operator' : ' operators') + ' + ' + help.length + (help.length === 1 ? ' helper' : ' helpers') + ')' : '');
+    var parts = [];
+    operations.forEach(function (o) {
+      var hs = help.filter(function (p) { return p.op === o.id; });
+      if (hs.length) parts.push(abbr(o.name) + ': ' + hs.map(function (p) { return shortName(p.name) || p.id; }).join(', '));
+    });
+    var lost = help.filter(function (p) { return !operations.some(function (o) { return o.id === p.op; }); });
+    if (lost.length) parts.push('No operation: ' + lost.map(function (p) { return shortName(p.name) || p.id; }).join(', '));
+    var line2 = parts.length ? 'Helpers, not in the strength \u2013 ' + parts.join('  \u00b7  ') : '';
+    return { l1: line1, l2: line2 };
+  };
   var capacity = function () { return state.ops > 0 ? (60 * state.ops) / STD_MINUTES : 0; };
   var piecesFor = function (loss) { return Math.round(loss / 100 * capacity()); };
 
@@ -1247,7 +1279,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     };
     operations.forEach(function (o, i) {
       var people = crew[o.id] || [];
-      var info = h('span', { class: 'oe-name' }, o.name, h('small', { text: (o.machine ? o.machine + ' · ' : '') + 'SAM ' + fmt2(o.sam) }));
+      var helpers = ((rec && rec.help) || state.helpers || []).filter(function (q) { return q.op === o.id; });
+      var info = h('span', { class: 'oe-name' }, o.name, h('small', { text: (o.machine ? o.machine + ' · ' : '') + 'SAM ' + fmt2(o.sam) }), helpers.length ? h('small', { text: 'Helper: ' + helpers.map(function (q) { return shortName(q.name) || q.id; }).join(', ') }) : false);
       var lastCls = i === operations.length - 1 ? ' last' : '';
       if (!people.length) {
         var inp = mkInput(o.name, rec && rec.ops ? rec.ops[o.id] : undefined);
@@ -1364,17 +1397,20 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   var owList = [], owEdit = false;
   var owCrew = function () {
     var crew = {};
-    operations.forEach(function (o) { owList.forEach(function (p) { if (p.op === o.id) (crew[o.id] = crew[o.id] || []).push({ id: p.id, name: p.name }); }); });
+    operations.forEach(function (o) { owList.forEach(function (p) { if (p.role === 'op' && p.op === o.id) (crew[o.id] = crew[o.id] || []).push({ id: p.id, name: p.name }); }); });
     return crew;
   };
+  var owHelpers = function () { return owList.filter(function (q) { return q.role === 'help'; }).map(function (q) { return { id: q.id, name: q.name, op: q.op }; }); };
   var owTotal = function () {
-    var crew = owCrew(), helpers = owList.filter(function (q) { return q.op === '_h'; });
+    var crew = owCrew(), helpers = owHelpers();
     var n = manpower(crew, helpers), ops = crewCount(crew);
     $('ow-total').textContent = n ? n + ' working' + (helpers.length ? ' (' + ops + (ops === 1 ? ' operator' : ' operators') + ' + ' + helpers.length + (helpers.length === 1 ? ' helper' : ' helpers') + ')' : '') + ' \u00b7 this is the present manpower' : 'No operators added yet';
   };
-  var opOptions = function (sel, value) {
-    sel.replaceChildren.apply(sel, operations.map(function (o, i) { return h('option', { value: o.id, text: (i + 1) + ' · ' + o.name }); }).concat([h('option', { value: '_h', text: 'Helper (not on an operation)' })]));
-    if (value) sel.value = value;
+  var opOptions = function (sel, value, allowNone) {
+    var opts = operations.map(function (o, i) { return h('option', { value: o.id, text: (i + 1) + ' · ' + o.name }); });
+    if (allowNone) opts.unshift(h('option', { value: '', text: 'Choose the operation' }));
+    sel.replaceChildren.apply(sel, opts);
+    if (value !== undefined && value !== null) sel.value = value;
   };
   var owLookup = function () {
     var id = $('ow-id').value.replace(/\D/g, ''), el = $('ow-name');
@@ -1395,12 +1431,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return { id: id, name: name };
   };
   var owAdd = function () {
-    var p = owLookup(), op = $('ow-op').value;
+    var p = owLookup(), op = $('ow-op').value, role = $('ow-role').value;
     $('ow-err').textContent = '';
     if (!p) { $('ow-err').textContent = !$('ow-manual').hidden ? 'Type the operator name.' : 'Type the full employee ID first.'; if (!$('ow-manual').hidden) $('ow-typed').focus(); return; }
     if (owList.some(function (q) { return q.id === p.id && q.op === op; })) { $('ow-err').textContent = p.name + ' is already on that operation.'; return; }
     var also = owList.some(function (q) { return q.id === p.id; });
-    owList.push({ id: p.id, name: p.name, op: op });
+    owList.push({ id: p.id, name: p.name, op: op, role: role });
     $('ow-id').value = ''; $('ow-name').textContent = ''; $('ow-typed').value = ''; $('ow-manual').hidden = true;
     owRender(); owTotal();
     if (also) $('ow-err').textContent = p.name + ' is now on more than one place and is counted once in the manpower.';
@@ -1416,21 +1452,24 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     if (!owList.length) { list.append(h('p', { class: 'ow-none', text: 'No operators yet.' })); return; }
     var order = {};
     operations.forEach(function (o, i) { order[o.id] = i; });
-    order._h = 9999;
-    owList.slice().sort(function (a, b) { return (order[a.op] || 0) - (order[b.op] || 0); }).forEach(function (p) {
-      var row = h('div', { class: 'ow-row' }, h('span', { class: 'nm' }, p.name || 'ID ' + p.id, h('small', { text: p.id })));
+    var rank = function (q) { return (order[q.op] === undefined ? 9999 : order[q.op]) * 2 + (q.role === 'help' ? 1 : 0); };
+    owList.slice().sort(function (a, b) { return rank(a) - rank(b); }).forEach(function (p) {
+      var row = h('div', { class: 'ow-row' }, h('span', { class: 'nm' }, p.name || 'ID ' + p.id, h('small', { text: p.id + (p.role === 'help' ? ' \u00b7 helper' : '') })));
       if (owEdit) {
         row.append(h('button', { type: 'button', class: 'rm', 'aria-label': 'Remove ' + (p.name || p.id), text: '×', onclick: function () { owList.splice(owList.indexOf(p), 1); owRender(); owTotal(); } }));
         var sel = h('select', { class: 'inp', 'aria-label': 'Operation for ' + (p.name || p.id) });
-        opOptions(sel, p.op);
+        opOptions(sel, p.op, p.op === '');
         sel.addEventListener('change', function () {
           if (owList.some(function (q) { return q !== p && q.id === p.id && q.op === sel.value; })) { $('ow-err').textContent = p.name + ' is already on that operation.'; sel.value = p.op; return; }
           p.op = sel.value; owRender();
         });
-        row.append(sel);
+        var rs = h('select', { class: 'inp', 'aria-label': 'Role of ' + (p.name || p.id) }, h('option', { value: 'op', text: 'Operator' }), h('option', { value: 'help', text: 'Helper' }));
+        rs.value = p.role;
+        rs.addEventListener('change', function () { p.role = rs.value; owRender(); owTotal(); });
+        row.append(h('div', { class: 'sels' }, sel, rs));
       } else {
         var o = operations[order[p.op]];
-        row.append(h('span', {}), h('span', { class: 'ow-none', text: p.op === '_h' ? 'Helper' : o ? (order[p.op] + 1) + ' · ' + o.name : '' }));
+        row.append(h('span', {}), h('span', { class: 'ow-none', text: (p.role === 'help' ? 'Helper \u00b7 ' : '') + (o ? (order[p.op] + 1) + ' · ' + o.name : 'no operation') }));
       }
       list.append(row);
     });
@@ -1440,31 +1479,39 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     owEdit = role === 'admin' || (role === 'counter' && state.date === toISO(new Date()));
     owList = [];
     var crew = cleanCrew(state.crew);
-    operations.forEach(function (o) { (crew[o.id] || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: o.id }); }); });
-    (state.helpers || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: '_h' }); });
+    operations.forEach(function (o) { (crew[o.id] || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: o.id, role: 'op' }); }); });
+    (state.helpers || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: p.op || '', role: 'help' }); });
     $('ow-err').textContent = ''; $('ow-id').value = ''; $('ow-name').textContent = ''; $('ow-typed').value = ''; $('ow-manual').hidden = true;
-    opOptions($('ow-op'));
-    $('ow-sub').textContent = owEdit ? 'Type an employee ID, the name appears, then pick the operation and add. Each operator gets a box for their pieces every hour. Choose Helper for people who are not on an operation: they are not in the given Strength but still count in the manpower.' : role === 'counter' ? 'Operators can only be changed for today.' : 'Operators and the operation each one is on.';
+    opOptions($('ow-op')); $('ow-role').value = 'op';
+    $('ow-sub').textContent = owEdit ? 'Type an employee ID, the name appears, then pick the operation and add. Each operator gets a box for their pieces every hour. Set Role to Helper for someone who helps on that operation without entering pieces: they are not in the given Strength but still count in the manpower.' : role === 'counter' ? 'Operators can only be changed for today.' : 'Operators and the operation each one is on.';
     $('ow-save').hidden = !owEdit;
     $('ow-cancel').textContent = owEdit ? 'Cancel' : 'Close';
-    $('ow-apply').checked = false;
-    $('ow-apply-wrap').hidden = !(role === 'admin' && Object.keys(state.hours).length);
+    $('ow-ask').hidden = true; $('ow-actions').hidden = false;
     owRender(); owTotal();
     $('ow').hidden = false;
     if (owEdit && !EMP) loadStaff().then(function (ok) { if (ok && !$('ow').hidden) owRender(); });
   };
   var closeCrew = function () { $('ow').hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); };
-  var saveCrew = function () {
+  var saveCrew = function (apply) {
     if (!owEdit) return;
-    state.crew = cleanCrew(owCrew());
-    state.helpers = cleanHelpers(owList.filter(function (q) { return q.op === '_h'; }));
-    var n = manpower(state.crew, state.helpers);
+    var crew = cleanCrew(owCrew());
+    var helpers = cleanHelpers(owHelpers());
+    var n = manpower(crew, helpers);
+    var recorded = Object.keys(state.hours);
+    /* Hours already recorded keep the manpower they were saved with. When it would differ, the admin is asked what to do. */
+    if (apply === undefined && role === 'admin' && n > 0 && recorded.some(function (k) { return (state.hours[k].men || state.ops) !== n; })) {
+      $('ow-ask-text').textContent = 'The manpower is now ' + n + '. ' + recorded.length + (recorded.length === 1 ? ' hour is' : ' hours are') + ' already recorded today with a different manpower. Change them to ' + n + ' as well?';
+      $('ow-ask').hidden = false; $('ow-actions').hidden = true;
+      try { $('ow-ask').scrollIntoView({ block: 'end', behavior: 'smooth' }); } catch (e) {}
+      return;
+    }
+    state.crew = crew;
+    state.helpers = helpers;
     if (n > 0) state.ops = n;
-    /* Recorded hours keep the manpower they were saved with, unless the admin asks to change them too. */
-    if ($('ow-apply').checked && role === 'admin' && n > 0) {
-      Object.keys(state.hours).forEach(function (k) {
+    if (apply === true && role === 'admin' && n > 0) {
+      recorded.forEach(function (k) {
         state.hours[k].men = n;
-        if (state.helpers.length) state.hours[k].help = JSON.parse(JSON.stringify(state.helpers)); else delete state.hours[k].help;
+        if (helpers.length) state.hours[k].help = JSON.parse(JSON.stringify(helpers)); else delete state.hours[k].help;
       });
     }
     crewDirty = true;
@@ -1978,6 +2025,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
      the same height reads as efficiency % on the right axis. Lost efficiency stacks above the bar. */
   var renderChart = function () {
     var box = $('chart');
+    var mn = manning();
+    var note = $('chart-men');
+    note.replaceChildren(h('b', { text: mn.l1 }));
+    if (mn.l2) note.append(h('br'), document.createTextNode(mn.l2));
     var rows = SLOTS.map(function (s) {
       var r = state.hours[s[0]];
       var e = r ? eff(r.out, r.men) : null;
@@ -2225,7 +2276,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   $('oe').addEventListener('click', function (ev) { if (ev.target === $('oe')) closeOps(); });
   $('ops-btn').addEventListener('click', openOpsEditor);
   $('crew-btn').addEventListener('click', openCrew);
-  $('ow-save').addEventListener('click', saveCrew);
+  $('ow-save').addEventListener('click', function () { saveCrew(); });
+  $('ow-ask-yes').addEventListener('click', function () { saveCrew(true); });
+  $('ow-ask-no').addEventListener('click', function () { saveCrew(false); });
+  $('ow-ask-back').addEventListener('click', function () { $('ow-ask').hidden = true; $('ow-actions').hidden = false; });
   $('ow-cancel').addEventListener('click', closeCrew);
   $('ow-unlock').addEventListener('click', unlockStaff);
   $('ow-id').addEventListener('input', function () { $('ow-err').textContent = ''; owLookup(); });
@@ -2267,7 +2321,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   };
   var makeImage = function () {
     var rows = lastRows;
-    var W = 1080, H = 1240, P = 48;
+    var mn = manning();
+    var W = 1080, P = 48;
+    var mc = document.createElement('canvas').getContext('2d');
+    mc.font = '500 24px ' + (getComputedStyle(document.body).fontFamily || 'sans-serif');
+    var l2 = mn.l2 ? wrapLines(mc, mn.l2, W - 2 * P) : [];
+    var H = 1240 + 76 + l2.length * 34;
     var cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     var c = cv.getContext('2d');
@@ -2380,6 +2439,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       c.fillStyle = ink; c.font = '600 24px ' + font; c.textAlign = 'left'; c.fillText(label, kx + 48, ky);
       kx += w + 12;
     });
+    c.textAlign = 'left'; c.fillStyle = ink; c.font = '700 28px ' + font;
+    var my = H - 94 - l2.length * 34;
+    c.fillText(mn.l1, P, my, W - 2 * P);
+    c.fillStyle = muted; c.font = '500 24px ' + font;
+    l2.forEach(function (l, i) { c.fillText(l, P, my + 38 + i * 34); });
     c.fillStyle = muted; c.font = '500 22px ' + font; c.textAlign = 'left';
     c.fillText('Bars: output per hour · Line: efficiency · Hatched: efficiency lost', P, H - 28);
     return new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png'); });
@@ -2388,7 +2452,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   var shareText = function () {
     var recd = lastRows.filter(function (r) { return r.e !== null; });
     var total = recd.reduce(function (a, r) { return a + r.out; }, 0);
-    return state.section + ' · ' + state.date + '\nOutput ' + fInt(total) + ' pieces over ' + recd.length + ' hours';
+    return state.section + ' · ' + state.date + '\nOutput ' + fInt(total) + ' pieces over ' + recd.length + ' hours\n' + manning().l1.replace(/\s+/g, ' ');
   };
   var onShare = function (spec) {
     spec = spec || { mk: makeImage, msg: 'share-msg', out: 'share-out', alt: 'Output and efficiency graph', name: 'hourly-' + state.date + '.png', text: shareText };
@@ -2581,10 +2645,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         r.eff = r.none ? null : r.v * o.sam / (60 * r.hrs) * 100;
         if (r.v > maxV) maxV = r.v;
       });
-      return { op: o, i: i, rows: rows, total: rows.reduce(function (t, r) { return t + r.v; }, 0), last: i === operations.length - 1 };
-    }).filter(function (g) { return g.rows.length; });
+      var hl = [], hseen2 = {};
+      keys.forEach(function (k) { ((state.hours[k].help) || []).forEach(function (q) { if (q.op === o.id && !hseen2[q.id]) { hseen2[q.id] = true; hl.push(q); } }); });
+      return { op: o, i: i, rows: rows, helpers: hl, total: rows.reduce(function (t, r) { return t + r.v; }, 0), last: i === operations.length - 1 };
+    }).filter(function (g) { return g.rows.length || g.helpers.length; });
     var hs = [], hseen = {};
-    keys.forEach(function (k) { ((state.hours[k].help) || []).forEach(function (p) { if (!hseen[p.id]) { hseen[p.id] = true; hs.push(p); } }); });
+    keys.forEach(function (k) { ((state.hours[k].help) || []).forEach(function (p) { if (!hseen[p.id] && !operations.some(function (o) { return o.id === p.op; })) { hseen[p.id] = true; hs.push(p); } }); });
     return { scope: scope, keys: keys, groups: groups, max: maxV || 1, all: all, helpers: hs };
   };
   var renderOperators = function () {
@@ -2615,11 +2681,14 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
           h('span', { class: 'opr-track' }, h('span', { class: 'opr-bar' + (low ? ' low' : ''), style: 'width:' + Math.max(1, Math.round(r.v / d.max * 100)) + '%' })),
           h('span', { class: 'opr-v' }, fInt(r.v), r.eff !== null ? h('small', { text: Math.round(r.eff) + '%' }) : false));
       });
+      g.helpers.forEach(function (q) {
+        rows.push(h('div', { class: 'opr-row' }, h('span', { class: 'opr-nm', text: shortName(q.name || ('ID ' + q.id)) }), h('span', { class: 'opr-hl', text: 'Helper \u00b7 no pieces, counted in manpower' })));
+      });
       var head = h('div', { class: 'opr-gh' }, h('span', { text: (g.i + 1) + ' · ' + abbr(g.op.name) + (g.last ? ' (line output)' : '') }), h('small', { text: fInt(g.total) + ' pcs · SAM ' + fmt2(g.op.sam) }));
       kids.push(h.apply(null, ['div', { class: 'opr-grp' + (g.last ? ' last' : '') }, head].concat(rows)));
     });
     box.replaceChildren.apply(box, kids);
-    var helpTxt = d.helpers.length ? ' Helpers (no output, counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') + '.' : '';
+    var helpTxt = d.helpers.length ? ' Helpers with no operation (no output, counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') + '.' : '';
     $('opr-basis').textContent = 'Each operator’s efficiency = pieces × the operation’s SAM ÷ (60 × hours worked)' + (bottleneck > 0 ? '. Red bars are under the ' + bottleneck + '% target.' : '.') + helpTxt;
   };
   $('opr-hour').addEventListener('change', function () { oprScope = $('opr-hour').value; renderOperators(); });
@@ -2629,9 +2698,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var W = 1080, P = 48, ROW = 54, GH = 70;
     var font = getComputedStyle(document.body).fontFamily || 'sans-serif';
     var ink = cssv('--ink'), muted = cssv('--muted'), card = cssv('--card'), line = cssv('--line'), bad = cssv('--bad'), blue = cssv('--c1');
-    var rowsN = d.groups.reduce(function (t, g) { return t + g.rows.length; }, 0);
-    var helpLine = d.helpers.length ? 'Helpers (no output, counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') : '';
-    var helpLines = helpLine ? wrapLines(document.createElement('canvas').getContext('2d'), helpLine, W - 2 * P) : [];
+    var rowsN = d.groups.reduce(function (t, g) { return t + g.rows.length + g.helpers.length; }, 0);
+    var helpLine = d.helpers.length ? 'Helpers with no operation (counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') : '';
+    var hc = document.createElement('canvas').getContext('2d');
+    hc.font = '500 25px ' + font;
+    var helpLines = helpLine ? wrapLines(hc, helpLine, W - 2 * P) : [];
     var H = 230 + d.groups.length * GH + rowsN * ROW + 110 + helpLines.length * 36;
     var cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
@@ -2672,6 +2743,14 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         c.textAlign = 'right'; c.font = '700 27px ' + font; c.fillStyle = ink;
         c.fillText(fInt(r.v) + (r.eff !== null ? '  ' : ''), W - P - (r.eff !== null ? 78 : 0), cy + 9);
         if (r.eff !== null) { c.font = '600 25px ' + font; c.fillStyle = low ? bad : muted; c.fillText(Math.round(r.eff) + '%', W - P, cy + 9); }
+        y += ROW;
+      });
+      g.helpers.forEach(function (q) {
+        var cy2 = y + ROW / 2;
+        c.textAlign = 'left'; c.font = '500 27px ' + font; c.fillStyle = ink;
+        c.fillText(shortName(q.name || ('ID ' + q.id)), P, cy2 + 9, nameW - 14);
+        c.font = 'italic 500 24px ' + font; c.fillStyle = muted;
+        c.fillText('Helper \u00b7 no pieces, counted in manpower', barL, cy2 + 8, W - P - barL);
         y += ROW;
       });
     });
