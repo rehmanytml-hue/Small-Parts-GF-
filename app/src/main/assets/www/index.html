@@ -409,6 +409,17 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .od-card .od-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--muted); }
 .loss .txt.slow { color: var(--muted); font-weight: 500; }
 /* output by operation */
+.opr-grp { margin-top: 14px; }
+.opr-gh { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.opr-gh small { font-weight: 500; color: var(--muted); }
+.opr-grp.last .opr-gh { border-bottom: 2px solid var(--accent); }
+.opr-row { display: grid; grid-template-columns: 118px 1fr auto; gap: 8px; align-items: center; padding: 5px 0; font-size: 14px; }
+.opr-nm { min-width: 0; font-size: 13px; line-height: 1.15; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.opr-track { display: block; height: 20px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.opr-bar { display: block; height: 100%; border-radius: 6px; background: var(--c1); min-width: 2px; }
+.opr-bar.low { background: var(--bad); }
+.opr-v { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; white-space: nowrap; }
+.opr-v small { font-weight: 600; color: var(--muted); margin-left: 4px; }
 .opg-pick { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .opg-pick .inp { flex: 1; min-width: 0; }
 .chart .opbar { fill: var(--c1); cursor: pointer; }
@@ -643,6 +654,18 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       <span class="hint" id="opg-msg" role="status"></span>
     </div>
     <div class="share-out" id="opg-out" hidden></div>
+  </section>
+
+  <section class="card" id="opr-card" aria-labelledby="opr-h" hidden>
+    <h2 id="opr-h">Output by operator</h2>
+    <div class="opg-pick"><label class="lab" for="opr-hour">Show</label><select class="inp" id="opr-hour"></select></div>
+    <div id="opr"></div>
+    <p class="hint" id="opr-basis"></p>
+    <div class="share-row">
+      <button type="button" class="btn primary" id="opr-share">Share operator chart as picture</button>
+      <span class="hint" id="opr-msg" role="status"></span>
+    </div>
+    <div class="share-out" id="opr-out" hidden></div>
   </section>
 
   <section class="card" aria-labelledby="reasons-h">
@@ -2039,6 +2062,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     renderStitches();
     renderChart();
     renderOps();
+    renderOperators();
     renderReasons();
   };
 
@@ -2410,6 +2434,138 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     });
     return new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png'); });
   };
+  /* ---------- output by operator, one hour or the whole day ---------- */
+  var oprScope = null;
+  var oprKeys = function () { return SLOTS.map(function (s) { return s[0]; }).filter(function (k) { return state.hours[k] && state.hours[k].ops; }); };
+  var oprCompute = function () {
+    var all = oprKeys();
+    var scope = oprScope && (oprScope === 'day' || all.indexOf(oprScope) >= 0) ? oprScope : (all.length ? all[all.length - 1] : 'day');
+    var keys = scope === 'day' ? all : [scope];
+    var maxV = 0;
+    var groups = operations.map(function (o, i) {
+      var rows = [], byId = {};
+      keys.forEach(function (k) {
+        var rec = state.hours[k];
+        var people = rec.by && rec.by[o.id];
+        if (people && people.length) {
+          people.forEach(function (p) {
+            var n = rec.pp && rec.pp[o.id] && typeof rec.pp[o.id][p.id] === 'number' ? rec.pp[o.id][p.id] : null;
+            if (n === null) return;
+            var r = byId[p.id] || (byId[p.id] = { id: p.id, name: p.name || ('ID ' + p.id), v: 0, hrs: 0 });
+            r.v += n; r.hrs += 1;
+          });
+        } else if (rec.ops && typeof rec.ops[o.id] === 'number') {
+          var r2 = byId['_'] || (byId['_'] = { id: '', name: 'No operator set', v: 0, hrs: 0, none: true });
+          r2.v += rec.ops[o.id]; r2.hrs += 1;
+        }
+      });
+      Object.keys(byId).forEach(function (id) { rows.push(byId[id]); });
+      rows.forEach(function (r) {
+        r.eff = r.none ? null : r.v * o.sam / (60 * r.hrs) * 100;
+        if (r.v > maxV) maxV = r.v;
+      });
+      return { op: o, i: i, rows: rows, total: rows.reduce(function (t, r) { return t + r.v; }, 0), last: i === operations.length - 1 };
+    }).filter(function (g) { return g.rows.length; });
+    return { scope: scope, keys: keys, groups: groups, max: maxV || 1, all: all };
+  };
+  var renderOperators = function () {
+    var card = $('opr-card');
+    card.hidden = !operations.length;
+    if (card.hidden) return;
+    var d = oprCompute();
+    var sel = $('opr-hour');
+    $('opr-hour').parentNode.hidden = !d.all.length;
+    $('opr-share').parentNode.hidden = !d.all.length;
+    if (document.activeElement !== sel) {
+      sel.replaceChildren.apply(sel, [h('option', { value: 'day', text: 'Whole day' })].concat(d.all.map(function (k) { return h('option', { value: k, text: slotLabel(k) }); })));
+      sel.value = d.scope;
+    }
+    var box = $('opr');
+    if (!d.groups.length) {
+      box.replaceChildren(h('p', { class: 'empty', text: 'No hour has been recorded by operation yet. Add the operators (Operators button), then tap an hour in the hour log.' }));
+      $('opr-basis').textContent = '';
+      $('opr-out').hidden = true;
+      return;
+    }
+    var kids = [];
+    d.groups.forEach(function (g) {
+      var rows = g.rows.slice().sort(function (a, b) { return b.v - a.v; }).map(function (r) {
+        var low = r.eff !== null && bottleneck > 0 && r.eff < bottleneck;
+        return h('div', { class: 'opr-row' },
+          h('span', { class: 'opr-nm', text: shortName(r.name) }),
+          h('span', { class: 'opr-track' }, h('span', { class: 'opr-bar' + (low ? ' low' : ''), style: 'width:' + Math.max(1, Math.round(r.v / d.max * 100)) + '%' })),
+          h('span', { class: 'opr-v' }, fInt(r.v), r.eff !== null ? h('small', { text: Math.round(r.eff) + '%' }) : false));
+      });
+      var head = h('div', { class: 'opr-gh' }, h('span', { text: (g.i + 1) + ' · ' + abbr(g.op.name) + (g.last ? ' (line output)' : '') }), h('small', { text: fInt(g.total) + ' pcs · SAM ' + fmt2(g.op.sam) }));
+      kids.push(h.apply(null, ['div', { class: 'opr-grp' + (g.last ? ' last' : '') }, head].concat(rows)));
+    });
+    box.replaceChildren.apply(box, kids);
+    $('opr-basis').textContent = 'Each operator’s efficiency = pieces × the operation’s SAM ÷ (60 × hours worked)' + (bottleneck > 0 ? '. Red bars are under the ' + bottleneck + '% target.' : '.');
+  };
+  $('opr-hour').addEventListener('change', function () { oprScope = $('opr-hour').value; renderOperators(); });
+
+  var makeOperatorImage = function () {
+    var d = oprCompute();
+    var W = 1080, P = 48, ROW = 54, GH = 70;
+    var font = getComputedStyle(document.body).fontFamily || 'sans-serif';
+    var ink = cssv('--ink'), muted = cssv('--muted'), card = cssv('--card'), line = cssv('--line'), bad = cssv('--bad'), blue = cssv('--c1');
+    var rowsN = d.groups.reduce(function (t, g) { return t + g.rows.length; }, 0);
+    var H = 230 + d.groups.length * GH + rowsN * ROW + 110;
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var c = cv.getContext('2d');
+    c.fillStyle = card; c.fillRect(0, 0, W, H);
+    c.save(); c.beginPath(); c.rect(0, 0, W, 14); c.clip();
+    for (var sx = -20; sx < W + 20; sx += 28) {
+      c.fillStyle = (sx / 28) % 2 === 0 ? cssv('--warn') : ink;
+      c.beginPath(); c.moveTo(sx, 14); c.lineTo(sx + 14, 0); c.lineTo(sx + 28, 0); c.lineTo(sx + 14, 14); c.closePath(); c.fill();
+    }
+    c.restore();
+    c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    c.fillStyle = ink; c.font = '700 46px ' + font; c.fillText(state.section, P, 86);
+    c.fillStyle = muted; c.font = '500 26px ' + font;
+    var dt = new Date(state.date + 'T00:00:00');
+    c.fillText(dt.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), P, 126);
+    var infoLine = INFO.filter(function (f) { return state[f[0]]; }).map(function (f) { return f[1] + ': ' + state[f[0]]; }).join('   ·   ');
+    if (infoLine) { c.textAlign = 'right'; c.font = '600 24px ' + font; c.fillStyle = ink; c.fillText(infoLine, W - P, 126, W - 2 * P - 420); c.textAlign = 'left'; }
+    c.fillStyle = ink; c.font = '700 34px ' + font;
+    c.fillText('Output by operator · ' + (d.scope === 'day' ? 'whole day' : slotLabel(d.scope)), P, 186);
+    var nameW = 290, valW = 210, barL = P + nameW, barW = W - P - valW - barL;
+    var y = 214;
+    d.groups.forEach(function (g) {
+      c.textAlign = 'left'; c.font = '700 28px ' + font; c.fillStyle = ink;
+      c.fillText((g.i + 1) + ' · ' + abbr(g.op.name) + (g.last ? ' (line output)' : ''), P, y + 44, W - 2 * P - 360);
+      c.textAlign = 'right'; c.font = '500 25px ' + font; c.fillStyle = muted;
+      c.fillText(fInt(g.total) + ' pcs · SAM ' + fmt2(g.op.sam), W - P, y + 44);
+      c.fillStyle = g.last ? cssv('--accent') : line; c.fillRect(P, y + 56, W - 2 * P, g.last ? 4 : 2);
+      y += GH;
+      g.rows.slice().sort(function (a, b) { return b.v - a.v; }).forEach(function (r) {
+        var cy = y + ROW / 2;
+        var low = r.eff !== null && bottleneck > 0 && r.eff < bottleneck;
+        c.textAlign = 'left'; c.font = '500 27px ' + font; c.fillStyle = ink;
+        c.fillText(shortName(r.name), P, cy + 9, nameW - 14);
+        rrect(c, barL, cy - 13, barW, 26, 8); c.fillStyle = line; c.fill();
+        var w = Math.max(6, barW * r.v / d.max);
+        rrect(c, barL, cy - 13, w, 26, 8); c.fillStyle = low ? bad : blue; c.fill();
+        c.textAlign = 'right'; c.font = '700 27px ' + font; c.fillStyle = ink;
+        c.fillText(fInt(r.v) + (r.eff !== null ? '  ' : ''), W - P - (r.eff !== null ? 78 : 0), cy + 9);
+        if (r.eff !== null) { c.font = '600 25px ' + font; c.fillStyle = low ? bad : muted; c.fillText(Math.round(r.eff) + '%', W - P, cy + 9); }
+        y += ROW;
+      });
+    });
+    c.textAlign = 'left'; c.font = '500 22px ' + font; c.fillStyle = muted;
+    c.fillText('Bars: pieces by each operator   ·   %: efficiency from the operation’s SAM' + (bottleneck > 0 ? '   ·   Red: under ' + bottleneck + '%' : ''), P, y + 40, W - 2 * P);
+    return new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png'); });
+  };
+  var operatorShareText = function () {
+    var d = oprCompute();
+    var last = d.groups.filter(function (g) { return g.last; })[0];
+    return state.section + ' · ' + state.date + '\nOutput by operator · ' + (d.scope === 'day' ? 'whole day' : slotLabel(d.scope)) + (last ? ' · line output ' + fInt(last.total) : '');
+  };
+  $('opr-share').addEventListener('click', function () {
+    onShare({ mk: makeOperatorImage, msg: 'opr-msg', out: 'opr-out', alt: 'Output by operator chart', name: 'operators-' + state.date + '.png', text: operatorShareText });
+  });
+
   var opsShareText = function () {
     var d = opgCompute();
     var known = d.vals.filter(function (v) { return v !== null; });
