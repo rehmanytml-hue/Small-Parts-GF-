@@ -393,6 +393,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
 .ow-none { color: var(--muted); font-size: 14px; }
 .ow-msg { font-size: 13px; color: var(--muted); min-height: 1em; }
 .ow-msg.bad { color: var(--bad, #c0392b); }
+.ow-apply { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; line-height: 1.3; }
+.ow-apply input { width: 22px; height: 22px; flex: none; margin: 0; }
 .ow-lock { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; padding: 10px; border: 1px dashed var(--line); border-radius: 12px; }
 .oe-box.last { padding: 8px; margin: 2px -8px 0; border-radius: 12px; background: var(--card-2, rgba(195, 214, 0, 0.16)); box-shadow: inset 0 0 0 2px var(--accent); }
 .oe-row.head { grid-template-columns: 26px 1fr auto; margin-top: 6px; }
@@ -787,6 +789,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         <button type="button" class="btn primary" id="ow-addbtn">Add operator</button>
       </div>
       <div class="oe-list" id="ow-list"></div>
+      <label class="ow-apply" id="ow-apply-wrap" hidden><input type="checkbox" id="ow-apply"><span>Also change the hours already recorded today to this manpower. Leave it off if the change only applies from now on.</span></label>
       <div class="err" id="ow-err" role="alert"></div>
       <div class="actions sticky">
         <button type="button" class="btn" id="ow-cancel">Cancel</button>
@@ -1444,6 +1447,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('ow-sub').textContent = owEdit ? 'Type an employee ID, the name appears, then pick the operation and add. Each operator gets a box for their pieces every hour. Choose Helper for people who are not on an operation: they are not in the given Strength but still count in the manpower.' : role === 'counter' ? 'Operators can only be changed for today.' : 'Operators and the operation each one is on.';
     $('ow-save').hidden = !owEdit;
     $('ow-cancel').textContent = owEdit ? 'Cancel' : 'Close';
+    $('ow-apply').checked = false;
+    $('ow-apply-wrap').hidden = !(role === 'admin' && Object.keys(state.hours).length);
     owRender(); owTotal();
     $('ow').hidden = false;
     if (owEdit && !EMP) loadStaff().then(function (ok) { if (ok && !$('ow').hidden) owRender(); });
@@ -1455,6 +1460,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     state.helpers = cleanHelpers(owList.filter(function (q) { return q.op === '_h'; }));
     var n = manpower(state.crew, state.helpers);
     if (n > 0) state.ops = n;
+    /* Recorded hours keep the manpower they were saved with, unless the admin asks to change them too. */
+    if ($('ow-apply').checked && role === 'admin' && n > 0) {
+      Object.keys(state.hours).forEach(function (k) {
+        state.hours[k].men = n;
+        if (state.helpers.length) state.hours[k].help = JSON.parse(JSON.stringify(state.helpers)); else delete state.hours[k].help;
+      });
+    }
     crewDirty = true;
     persist();
     closeCrew();
