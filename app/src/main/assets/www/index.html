@@ -931,7 +931,24 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     Object.keys(crew || {}).forEach(function (op) { crew[op].forEach(function (p) { seen[p.id] = true; }); });
     return Object.keys(seen).length;
   };
-  var newDay = function (date, section, strength, ops, info) { info = info || {}; return { date: date, section: section, strength: strength, ops: ops, ytm: info.ytm || '', article: info.article || '', customer: info.customer || '', crew: cleanCrew(info.crew), hours: {} }; };
+  /* Helpers are people on the floor who are not on an operation and not in the given Strength. They count in the manpower. */
+  var cleanHelpers = function (src) {
+    var list = [], seen = {};
+    (Array.isArray(src) ? src : []).slice(0, 60).forEach(function (p) {
+      var id = p && String(p.id || '').replace(/\D/g, '').slice(0, 10);
+      if (!id || seen[id]) return;
+      seen[id] = true;
+      list.push({ id: id, name: String(p.name || '').trim().slice(0, 60) });
+    });
+    return list;
+  };
+  var manpower = function (crew, helpers) {
+    var seen = {};
+    Object.keys(crew || {}).forEach(function (op) { crew[op].forEach(function (p) { seen[p.id] = true; }); });
+    (helpers || []).forEach(function (p) { seen[p.id] = true; });
+    return Object.keys(seen).length;
+  };
+  var newDay = function (date, section, strength, ops, info) { info = info || {}; return { date: date, section: section, strength: strength, ops: ops, ytm: info.ytm || '', article: info.article || '', customer: info.customer || '', crew: cleanCrew(info.crew), helpers: cleanHelpers(info.helpers), hours: {} }; };
   var docPath = function (s) { return 'days/' + s.date + '_' + slug(s.section); };
 
   var db = null;
@@ -1023,6 +1040,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         });
         if (Object.keys(pp).length) hours[k].pp = pp;
       }
+      if (Array.isArray(v.help) && v.help.length) hours[k].help = cleanHelpers(v.help);
       if (v.by && typeof v.by === 'object') { var by = cleanCrew(v.by); if (Object.keys(by).length) hours[k].by = by; }
     });
     return {
@@ -1032,6 +1050,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       strength: Number(d.strength) >= 0 && d.strength !== '' ? Number(d.strength) : base.strength,
       ops: Number(d.ops) > 0 ? Number(d.ops) : base.ops,
       crew: cleanCrew(d.crew),
+      helpers: cleanHelpers(d.helpers),
       hours: hours
     };
   };
@@ -1070,7 +1089,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
           merged = JSON.parse(JSON.stringify(snap));
           merged.hours = hours;
           /* The operators list follows whichever phone changed it last, not whichever saved last. */
-          if (!crewChanged && Object.keys(r.crew).length) { merged.crew = r.crew; merged.ops = r.ops; }
+          if (!crewChanged && (Object.keys(r.crew).length || r.helpers.length)) { merged.crew = r.crew; merged.helpers = r.helpers; merged.ops = r.ops; }
         }
         return db.doc(docPath(snap)).set(merged).then(function () { return merged; });
       })
@@ -1079,9 +1098,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         Object.keys(merged.hours).forEach(function (k) { baseHours[k] = hourSig(merged.hours[k]); });
         /* Pick up hours another phone added, unless this phone has changed something since the save started. */
         if (docPath(state) === docPath(snap) && hourSig(state.hours) === hourSig(snap.hours) && hourSig(merged.hours) !== hourSig(snap.hours)) { state.hours = JSON.parse(JSON.stringify(merged.hours)); render(); }
-        if (docPath(state) === docPath(snap) && !crewDirty && JSON.stringify(state.crew) !== JSON.stringify(merged.crew)) { state.crew = cleanCrew(merged.crew); state.ops = merged.ops; render(); }
+        if (docPath(state) === docPath(snap) && !crewDirty && JSON.stringify([state.crew, state.helpers]) !== JSON.stringify([merged.crew, merged.helpers])) { state.crew = cleanCrew(merged.crew); state.helpers = cleanHelpers(merged.helpers); state.ops = merged.ops; render(); }
         /* Remember the operators for the next day. */
-        if (crewChanged && snap.date === toISO(new Date())) db.doc('live/crew').set({ section: snap.section, crew: snap.crew }).catch(function () {});
+        if (crewChanged && snap.date === toISO(new Date())) db.doc('live/crew').set({ section: snap.section, crew: snap.crew, helpers: snap.helpers || [] }).catch(function () {});
         /* Tell spectators which section is being recorded today. */
         if (snap.date !== toISO(new Date()) || liveKey === docPath(snap)) return null;
         liveKey = docPath(snap);
@@ -1114,7 +1133,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     setStatus('Loading…');
     var done = function (data) {
       state = data ? normalize(data, base) : newDay(date, section, state.strength, state.ops, state);
-      if (!data && date !== toISO(new Date())) state.crew = {};
+      if (!data && date !== toISO(new Date())) { state.crew = {}; state.helpers = []; }
       resetBase();
       render();
     };
@@ -1124,13 +1143,13 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       done(data);
       setStatus('Ready');
       /* A day nobody has started yet begins with the operators from the last working day. */
-      if (!data && date === toISO(new Date()) && !Object.keys(state.crew).length) {
+      if (!data && date === toISO(new Date()) && !manpower(state.crew, state.helpers)) {
         withTimeout(db.doc('live/crew').get(), 8000).then(unwrap, function () { return null; }).then(function (last) {
           if (!last || last.section !== section || state.date !== date || state.section !== section || crewDirty) return;
-          if (Object.keys(state.crew).length || Object.keys(state.hours).length) return;
-          var crew = cleanCrew(last.crew);
-          if (!crewCount(crew)) return;
-          state.crew = crew; state.ops = crewCount(crew);
+          if (manpower(state.crew, state.helpers) || Object.keys(state.hours).length) return;
+          var crew = cleanCrew(last.crew), helpers = cleanHelpers(last.helpers);
+          if (!manpower(crew, helpers)) return;
+          state.crew = crew; state.helpers = helpers; state.ops = manpower(crew, helpers);
           render();
         });
       }
@@ -1272,7 +1291,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var out = map[operations[operations.length - 1].id];
     var rec = { out: out, ops: map };
     /* Who was on each operation this hour and what each of them made. */
-    if (Object.keys(by).length) { rec.by = by; rec.pp = pp; rec.men = prev && prev.men ? prev.men : crewCount(by); }
+    if (Object.keys(by).length) { rec.by = by; rec.pp = pp; }
+    /* Manpower for this hour: operators plus helpers on the floor when it was saved. A correction later keeps it. */
+    if (prev && prev.men) { rec.men = prev.men; if (prev.help) rec.help = prev.help; }
+    else if (manpower(state.crew, state.helpers) > 0) { rec.men = manpower(state.crew, state.helpers); if (state.helpers.length) rec.help = JSON.parse(JSON.stringify(state.helpers)); }
     var low = isLow(eff(out, rec.men));
     if (prev && prev.loss != null && low && prev.out === out) { rec.loss = prev.loss; rec.cause = prev.cause || ''; }
     var snapshot = prev ? JSON.parse(JSON.stringify(prev)) : null;
@@ -1343,11 +1365,12 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     return crew;
   };
   var owTotal = function () {
-    var n = crewCount(owCrew());
-    $('ow-total').textContent = n ? n + (n === 1 ? ' operator' : ' operators') + ' working · this is the present manpower' : 'No operators added yet';
+    var crew = owCrew(), helpers = owList.filter(function (q) { return q.op === '_h'; });
+    var n = manpower(crew, helpers), ops = crewCount(crew);
+    $('ow-total').textContent = n ? n + ' working' + (helpers.length ? ' (' + ops + (ops === 1 ? ' operator' : ' operators') + ' + ' + helpers.length + (helpers.length === 1 ? ' helper' : ' helpers') + ')' : '') + ' \u00b7 this is the present manpower' : 'No operators added yet';
   };
   var opOptions = function (sel, value) {
-    sel.replaceChildren.apply(sel, operations.map(function (o, i) { return h('option', { value: o.id, text: (i + 1) + ' · ' + o.name }); }));
+    sel.replaceChildren.apply(sel, operations.map(function (o, i) { return h('option', { value: o.id, text: (i + 1) + ' · ' + o.name }); }).concat([h('option', { value: '_h', text: 'Helper (not on an operation)' })]));
     if (value) sel.value = value;
   };
   var owLookup = function () {
@@ -1377,7 +1400,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     owList.push({ id: p.id, name: p.name, op: op });
     $('ow-id').value = ''; $('ow-name').textContent = ''; $('ow-typed').value = ''; $('ow-manual').hidden = true;
     owRender(); owTotal();
-    if (also) $('ow-err').textContent = p.name + ' is now on more than one operation and is counted once in the manpower.';
+    if (also) $('ow-err').textContent = p.name + ' is now on more than one place and is counted once in the manpower.';
     $('ow-id').focus();
   };
   var owRender = function () {
@@ -1390,6 +1413,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     if (!owList.length) { list.append(h('p', { class: 'ow-none', text: 'No operators yet.' })); return; }
     var order = {};
     operations.forEach(function (o, i) { order[o.id] = i; });
+    order._h = 9999;
     owList.slice().sort(function (a, b) { return (order[a.op] || 0) - (order[b.op] || 0); }).forEach(function (p) {
       var row = h('div', { class: 'ow-row' }, h('span', { class: 'nm' }, p.name || 'ID ' + p.id, h('small', { text: p.id })));
       if (owEdit) {
@@ -1403,7 +1427,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
         row.append(sel);
       } else {
         var o = operations[order[p.op]];
-        row.append(h('span', {}), h('span', { class: 'ow-none', text: o ? (order[p.op] + 1) + ' · ' + o.name : '' }));
+        row.append(h('span', {}), h('span', { class: 'ow-none', text: p.op === '_h' ? 'Helper' : o ? (order[p.op] + 1) + ' · ' + o.name : '' }));
       }
       list.append(row);
     });
@@ -1414,9 +1438,10 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     owList = [];
     var crew = cleanCrew(state.crew);
     operations.forEach(function (o) { (crew[o.id] || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: o.id }); }); });
+    (state.helpers || []).forEach(function (p) { owList.push({ id: p.id, name: p.name, op: '_h' }); });
     $('ow-err').textContent = ''; $('ow-id').value = ''; $('ow-name').textContent = ''; $('ow-typed').value = ''; $('ow-manual').hidden = true;
     opOptions($('ow-op'));
-    $('ow-sub').textContent = owEdit ? 'Type an employee ID, the name appears, then pick the operation and add. Each operator then gets a box for their pieces every hour.' : role === 'counter' ? 'Operators can only be changed for today.' : 'Operators and the operation each one is on.';
+    $('ow-sub').textContent = owEdit ? 'Type an employee ID, the name appears, then pick the operation and add. Each operator gets a box for their pieces every hour. Choose Helper for people who are not on an operation: they are not in the given Strength but still count in the manpower.' : role === 'counter' ? 'Operators can only be changed for today.' : 'Operators and the operation each one is on.';
     $('ow-save').hidden = !owEdit;
     $('ow-cancel').textContent = owEdit ? 'Cancel' : 'Close';
     owRender(); owTotal();
@@ -1427,7 +1452,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   var saveCrew = function () {
     if (!owEdit) return;
     state.crew = cleanCrew(owCrew());
-    var n = crewCount(state.crew);
+    state.helpers = cleanHelpers(owList.filter(function (q) { return q.op === '_h'; }));
+    var n = manpower(state.crew, state.helpers);
     if (n > 0) state.ops = n;
     crewDirty = true;
     persist();
@@ -2125,11 +2151,11 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     $('sam').disabled = role !== 'admin' || operations.length > 0;
     $('sam-hint').textContent = operations.length ? 'Adds up from the operations list' : role === 'admin' ? 'Changing it updates every day\u2019s efficiency' : 'Only the admin can change this';
     $('ops-btn').textContent = 'Operations (' + operations.length + ' \u00b7 SAM ' + fmt2(STD_MINUTES) + ')';
-    var crewN = crewCount(state.crew);
-    $('crew-btn').textContent = crewN ? 'Operators (' + crewN + ' working)' : 'Operators (add by employee ID)';
+    var crewN = manpower(state.crew, state.helpers);
+    $('crew-btn').textContent = crewN ? 'Operators (' + crewN + ' working' + (state.helpers.length ? ', ' + state.helpers.length + (state.helpers.length === 1 ? ' helper' : ' helpers') : '') + ')' : 'Operators (add by employee ID)';
     $('crew-btn').parentNode.hidden = !operations.length;
     $('ops').readOnly = crewN > 0;
-    $('ops-hint').textContent = crewN > 0 ? 'Counted from the operators list' : '';
+    $('ops-hint').textContent = crewN > 0 ? 'Operators and helpers added in the Operators list' : '';
     renderTiles();
     countUp();
     renderRows();
@@ -2160,7 +2186,7 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
   });
   $('ops').addEventListener('change', function () {
     var v = Math.round(Number($('ops').value));
-    if (!crewCount(state.crew) && v >= 1 && v <= 999) { state.ops = v; persist(); }
+    if (!manpower(state.crew, state.helpers) && v >= 1 && v <= 999) { state.ops = v; persist(); }
     render();
   });
   $('strength').addEventListener('change', function () {
@@ -2545,7 +2571,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       });
       return { op: o, i: i, rows: rows, total: rows.reduce(function (t, r) { return t + r.v; }, 0), last: i === operations.length - 1 };
     }).filter(function (g) { return g.rows.length; });
-    return { scope: scope, keys: keys, groups: groups, max: maxV || 1, all: all };
+    var hs = [], hseen = {};
+    keys.forEach(function (k) { ((state.hours[k].help) || []).forEach(function (p) { if (!hseen[p.id]) { hseen[p.id] = true; hs.push(p); } }); });
+    return { scope: scope, keys: keys, groups: groups, max: maxV || 1, all: all, helpers: hs };
   };
   var renderOperators = function () {
     var card = $('opr-card');
@@ -2579,7 +2607,8 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
       kids.push(h.apply(null, ['div', { class: 'opr-grp' + (g.last ? ' last' : '') }, head].concat(rows)));
     });
     box.replaceChildren.apply(box, kids);
-    $('opr-basis').textContent = 'Each operator’s efficiency = pieces × the operation’s SAM ÷ (60 × hours worked)' + (bottleneck > 0 ? '. Red bars are under the ' + bottleneck + '% target.' : '.');
+    var helpTxt = d.helpers.length ? ' Helpers (no output, counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') + '.' : '';
+    $('opr-basis').textContent = 'Each operator’s efficiency = pieces × the operation’s SAM ÷ (60 × hours worked)' + (bottleneck > 0 ? '. Red bars are under the ' + bottleneck + '% target.' : '.') + helpTxt;
   };
   $('opr-hour').addEventListener('change', function () { oprScope = $('opr-hour').value; renderOperators(); });
 
@@ -2589,7 +2618,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     var font = getComputedStyle(document.body).fontFamily || 'sans-serif';
     var ink = cssv('--ink'), muted = cssv('--muted'), card = cssv('--card'), line = cssv('--line'), bad = cssv('--bad'), blue = cssv('--c1');
     var rowsN = d.groups.reduce(function (t, g) { return t + g.rows.length; }, 0);
-    var H = 230 + d.groups.length * GH + rowsN * ROW + 110;
+    var helpLine = d.helpers.length ? 'Helpers (no output, counted in manpower): ' + d.helpers.map(function (p) { return shortName(p.name) || p.id; }).join(', ') : '';
+    var helpLines = helpLine ? wrapLines(document.createElement('canvas').getContext('2d'), helpLine, W - 2 * P) : [];
+    var H = 230 + d.groups.length * GH + rowsN * ROW + 110 + helpLines.length * 36;
     var cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     var c = cv.getContext('2d');
@@ -2634,6 +2665,9 @@ body, .card, .tile, .row, .inp, .gate { transition: background-color 200ms ease,
     });
     c.textAlign = 'left'; c.font = '500 22px ' + font; c.fillStyle = muted;
     c.fillText('Bars: pieces by each operator   ·   %: efficiency from the operation’s SAM' + (bottleneck > 0 ? '   ·   Red: under ' + bottleneck + '%' : ''), P, y + 40, W - 2 * P);
+    c.font = '500 25px ' + font; c.fillStyle = ink;
+    var hy = y + 84;
+    wrapLines(c, helpLine, W - 2 * P).forEach(function (l) { c.fillText(l, P, hy); hy += 36; });
     return new Promise(function (res, rej) { cv.toBlob(function (b) { b ? res(b) : rej(new Error('blob')); }, 'image/png'); });
   };
   var operatorShareText = function () {
